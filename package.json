@@ -1,0 +1,40 @@
+{
+  "name": "rlint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run ESLint-compatible rules with Rust parsing and native TypeScript type services",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gabrielcsapo/rlint"
+  },
+  "scripts": {
+    "prepare:native": "node type-api/prepare.mjs --output /tmp/rlint-native-build",
+    "test:rust": "cargo test --locked",
+    "test:host": "node --conditions=@typescript/source --experimental-transform-types --test --test-concurrency=1 host/*.test.mjs",
+    "pretest:host": "cargo build --locked",
+    "dist": "node scripts/dist.mjs",
+    "build:native": "node scripts/build-native.mjs",
+    "format": "prettier --write \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\"",
+    "format:check": "prettier --check \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\""
+  },
+  "dependencies": {
+    "eslint": "^9.39.5",
+    "oxlint": "1.83.0",
+    "typescript": "~5.9.3"
+  },
+  "devDependencies": {
+    "@graphql-eslint/eslint-plugin": "^4.4.2",
+    "graphql": "^16.15.0",
+    "prettier": "3.10.1",
+    "typescript-eslint": "^8.72.2"
+  },
+  "exports": {
+    ".": "./host/cli.mjs",
+    "./native": "./host/native/index.mjs"
+  }
+}

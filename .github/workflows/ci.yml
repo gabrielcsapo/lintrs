@@ -1,0 +1,81 @@
+name: ci
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: npm run format:check
+      - run: cargo fetch --locked
+      - run: cargo test --locked -p rlint
+      - name: Prepare patched tsrs API and build the native layout
+        run: |
+          node scripts/build-native.mjs --build /tmp/rlint-native-build \
+            --out "$PWD/target/rlint-native"
+          test -f target/rlint-native/bin/rlint
+          test -f target/rlint-native/lib/librlint.node
+          test -f target/rlint-native/lib/librlint.${{ runner.os == 'macOS' && 'dylib' || 'so' }}
+      - name: Lint the typed-native build
+        run: |
+          cargo clippy --offline --all-targets --features typed-native \
+            --manifest-path /tmp/rlint-native-build/Cargo.toml -p rlint -- -D warnings
+      - name: Run the injected tsrs extension tests
+        run: |
+          cargo test --offline \
+            --manifest-path /tmp/rlint-native-build/tsrs-source/Cargo.toml \
+            -p tsrs_api rlint_
+      - name: Host tests (eager typed native)
+        env:
+          RLINT_TYPED_NATIVE: "1"
+          RLINT_IN_PROCESS_BINDING: ${{ github.workspace }}/target/rlint-native/lib/librlint.node
+          RLINT_BINARY: ${{ github.workspace }}/target/rlint-native/bin/rlint
+          RLINT_TEST_BINARY: ${{ github.workspace }}/target/rlint-native/bin/rlint
+          RLINT_COMPACT_DECLARATIONS: "1"
+          RLINT_FUSED_SYMBOLS: "1"
+          RLINT_TRUE_BULK: "1"
+          RLINT_CONTEXTUAL_BATCH: "1"
+        run: npm run test:host
+      - name: Host tests (lazy objects)
+        env:
+          RLINT_TYPED_NATIVE: "1"
+          RLINT_IN_PROCESS_BINDING: ${{ github.workspace }}/target/rlint-native/lib/librlint.node
+          RLINT_BINARY: ${{ github.workspace }}/target/rlint-native/bin/rlint
+          RLINT_TEST_BINARY: ${{ github.workspace }}/target/rlint-native/bin/rlint
+          RLINT_LAZY_OBJECTS: "1"
+          RLINT_LAZY_PREFETCH: "1"
+          RLINT_ADAPTIVE_FACTS: "1"
+        run: npm run test:host
+      - name: Build and smoke the distribution
+        run: |
+          npm run dist -- --build /tmp/rlint-native-build
+          dir=$(node -p 'const fs=require("fs");JSON.parse(fs.readFileSync("dist/"+fs.readdirSync("dist").find(f=>f.endsWith(".json")),"utf8")).directory')
+          mv "$dir" "$RUNNER_TEMP/rlint-moved"
+          sdk=$(node -p 'const fs=require("fs");JSON.parse(fs.readFileSync("dist/"+fs.readdirSync("dist").find(f=>f.endsWith(".json")),"utf8")).sdkTarball')
+          node scripts/smoke-dist.mjs "$RUNNER_TEMP/rlint-moved" "$sdk"

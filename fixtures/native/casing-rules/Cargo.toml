@@ -1,0 +1,18 @@
+[package]
+name = "rlint-casing-rules"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone workspace: rule crates never depend on the rlint crate; rlint
+# compiles them against its facade with --extern.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+# A real crates.io dependency used internally by the rule. Boundary types
+# (options, diagnostics) still go through rlint's facade, so this crate's own
+# dependency graph can be anything the author needs.
+[dependencies]
+camino = "1.2.4"
