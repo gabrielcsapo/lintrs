@@ -1,7 +1,15 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import { runHost } from "./engine.mjs";
-import { finalizeHost, formatUnix } from "./results.mjs";
+import { lint } from "./parallel.mjs";
+import {
+  formatTiming,
+  merge,
+  profiler,
+  summarize,
+  timingLimit,
+} from "./profile.mjs";
+import { formatUnix } from "./results.mjs";
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -10,19 +18,34 @@ async function main() {
       config: { type: "string" },
       quiet: { type: "boolean", default: false },
       format: { type: "string", default: "unix" },
+      concurrency: { type: "string", default: "off" },
     },
   });
-  if (values.config === undefined || process.env.RLINT_BINARY === undefined) {
+  const concurrency = values.concurrency;
+  if (
+    concurrency !== "off" &&
+    concurrency !== "auto" &&
+    !(Number.isSafeInteger(Number(concurrency)) && Number(concurrency) > 0)
+  )
     throw new Error(
-      "Start the compatibility host through the rlint Rust binary",
+      `--concurrency expects a positive integer, "auto", or "off"; found ${JSON.stringify(concurrency)}`,
+    );
+  if (values.config === undefined || process.env.LINTRS_BINARY === undefined) {
+    throw new Error(
+      "Start the compatibility host through the lintrs Rust binary",
     );
   }
-  const result = await runHost({
+  const profile = profiler();
+  const profiles = [];
+  const started = performance.now();
+  let results = await lint({
     configPath: values.config,
     paths: positionals,
     quiet: values.quiet,
+    concurrency: /^\d+$/u.test(concurrency) ? Number(concurrency) : concurrency,
+    profiles,
   });
-  let results = finalizeHost(result);
+  profile?.addWall(performance.now() - started);
   if (values.quiet) results = results.filter(result => result.errorCount > 0);
   if (values.format === "json") {
     process.stdout.write(`${JSON.stringify(results)}\n`);
@@ -30,6 +53,27 @@ async function main() {
     process.stdout.write(formatUnix(results));
   }
   process.exitCode = results.some(result => result.errorCount > 0) ? 1 : 0;
+  if (profile !== undefined) report(merge([profile.snapshot(), ...profiles]));
+}
+
+// TIMING goes to stderr: stdout carries the lint results (and -f json must
+// stay parseable), which is where ESLint differs.
+function report(snapshot) {
+  const limit = timingLimit();
+  if (limit !== undefined) process.stderr.write(formatTiming(snapshot, limit));
+  const path = process.env.LINTRS_TYPE_PROFILE;
+  if (path !== undefined && path !== "") {
+    let existing = {};
+    try {
+      existing = JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      // No type-service profile was written (an untyped run); start fresh.
+    }
+    writeFileSync(
+      path,
+      JSON.stringify({ ...existing, timing: summarize(snapshot) }, null, 2),
+    );
+  }
 }
 
 main().catch(error => {
@@ -37,6 +81,6 @@ main().catch(error => {
     error instanceof AggregateError
       ? error.errors.map(item => String(item)).join("\n")
       : String(error);
-  process.stderr.write(`rlint: ${details}\n`);
+  process.stderr.write(`lintrs: ${details}\n`);
   process.exitCode = 2;
 });

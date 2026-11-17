@@ -1,16 +1,16 @@
 [package]
-name = "rlint-demo-rules"
+name = "lintrs-demo-rules"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
-# Standalone workspace: rule crates never depend on the rlint crate; rlint
+# Standalone workspace: rule crates never depend on the lintrs crate; lintrs
 # compiles them against its facade with --extern.
 [workspace]
 
 [lib]
 crate-type = ["cdylib"]
 
-# No dependencies: everything the rules touch (rlint's facade and its
-# serde_json/tsrs re-exports) is supplied by rlint through --extern so the
-# crate instances are identical to the ones inside librlint.
+# No dependencies: everything the rules touch (lintrs's facade and its
+# serde_json/tsrs re-exports) is supplied by lintrs through --extern so the
+# crate instances are identical to the ones inside liblintrs.

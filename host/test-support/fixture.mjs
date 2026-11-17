@@ -12,7 +12,7 @@ import { ESLint } from "eslint";
 const host = resolve(import.meta.dirname, "..");
 const root = resolve(host, "..");
 const binary =
-  process.env.RLINT_TEST_BINARY ?? join(root, "target/debug/rlint");
+  process.env.LINTRS_TEST_BINARY ?? join(root, "target/debug/lintrs");
 
 export { binary, root };
 

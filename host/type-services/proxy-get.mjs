@@ -1,8 +1,32 @@
 import { createRequire } from "node:module";
 
+import { profiler } from "../profile.mjs";
 import { displayParts, docTags } from "./wrapping.mjs";
 
 const require = createRequire(import.meta.url);
+
+// TIMING labels for property reads, "get <kind>.<property>", built once per
+// kind and property (array indices collapse to "[index]").
+const readLabels = new Map();
+const readLabel = (kind, key) => {
+  let labels = readLabels.get(kind);
+  if (labels === undefined) {
+    labels = new Map();
+    readLabels.set(kind, labels);
+  }
+  let label = labels.get(key);
+  if (label === undefined) {
+    const name =
+      typeof key === "symbol"
+        ? `[${key.description}]`
+        : kind === "array" && /^\d+$/u.test(key)
+          ? "[index]"
+          : key;
+    label = `get ${kind}.${name}`;
+    labels.set(key, label);
+  }
+  return label;
+};
 const ts = require("typescript");
 
 const typeProperties = {
@@ -57,7 +81,7 @@ export function createGetHandler(ctx) {
     symbolDocs,
     signatureDocs,
   } = ctx;
-  return ({
+  const handlerFor = ({
     isNode,
     isType,
     isSymbol,
@@ -287,4 +311,44 @@ export function createGetHandler(ctx) {
       return Reflect.has(target, key);
     },
   });
+  // TIMING: property reads on wrapped types, symbols, signatures and nodes
+  // are adapter work, billed to the rule doing the reading.
+  const profile = profiler();
+  if (profile === undefined) return handlerFor;
+  return options => {
+    const handler = handlerFor(options);
+    const { get } = handler;
+    const kind = options.isType
+      ? "type"
+      : options.isSymbol
+        ? "symbol"
+        : options.isSignature
+          ? "signature"
+          : options.isNode
+            ? "node"
+            : undefined;
+    handler.get = (target, key) => {
+      // Nested inside other adapter work, a read is part of that entry.
+      const frame = profile.active("adapter")
+        ? undefined
+        : profile.enter(
+            "adapter",
+            readLabel(
+              kind ??
+                (Array.isArray(target)
+                  ? "array"
+                  : target instanceof Map
+                    ? "map"
+                    : "object"),
+              key,
+            ),
+          );
+      try {
+        return get.call(handler, target, key);
+      } finally {
+        profile.exit(frame);
+      }
+    };
+    return handler;
+  };
 }

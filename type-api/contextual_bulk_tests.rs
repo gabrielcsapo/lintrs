@@ -1,5 +1,5 @@
 #[test]
-fn rlint_contextual_batch_matches_scalar_and_validates_all_locations() {
+fn lintrs_contextual_batch_matches_scalar_and_validates_all_locations() {
     const SOURCE: &str = "export const typed: string = 'hello'; export const inferred = 42;";
     let host = TestHost::new(&[
         (
@@ -28,8 +28,8 @@ fn rlint_contextual_batch_matches_scalar_and_validates_all_locations() {
         let locations = Value::Array(locations.iter().cloned().map(Value::String).collect());
         let locations = json::marshal(&locations).unwrap();
         let value = json::unmarshal(&host.sp(&format!(r#""locations":{locations}"#))).unwrap();
-        let params = super::params::Params::new(&value, "rlintGetContextualTypes").unwrap();
-        super::handlers_types::rlint_get_contextual_types(&host, &params)
+        let params = super::params::Params::new(&value, "lintrsGetContextualTypes").unwrap();
+        super::handlers_types::lintrs_get_contextual_types(&host, &params)
     };
     assert_eq!(call(&locations).unwrap(), Value::Array(expected.clone()));
     assert_eq!(call(&[]).unwrap(), Value::Array(Vec::new()));

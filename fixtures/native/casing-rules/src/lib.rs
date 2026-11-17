@@ -1,13 +1,13 @@
 //! Rule crate that uses its own crates.io dependency internally.
 //!
-//! `camino` is a Cargo dependency of this crate (and not part of rlint's
+//! `camino` is a Cargo dependency of this crate (and not part of lintrs's
 //! dependency graph): it is compiled and linked into the rule library while
-//! the boundary types still come from `rlint::native`.
+//! the boundary types still come from `lintrs::native`.
 
 use camino::Utf8Path;
-use rlint::native::{Rule, RuleContext};
-use rlint::ts::ast::{Kind, Node};
-use rlint::ts::core::P;
+use lintrs::native::{Rule, RuleContext};
+use lintrs::ts::ast::{Kind, Node};
+use lintrs::ts::core::P;
 
 /// Flags string literals that name an existing non-UTF-8-free path segment:
 /// reports literals containing a platform-style path like `a/b/c` whose
@@ -29,6 +29,6 @@ impl Rule for TmpPathLiteral {
     }
 }
 
-rlint::export_rules! {
-    "no-tmp-path" => rlint::native::simple::<TmpPathLiteral>,
+lintrs::export_rules! {
+    "no-tmp-path" => lintrs::native::simple::<TmpPathLiteral>,
 }

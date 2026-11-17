@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { hostCommand } from "./host-command.mjs";
 import { globSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -29,14 +29,12 @@ export function createGraphQLHost(root) {
 
   const pending = new Map();
   const parseMany = sources => {
-    const parsed = spawnSync(process.env.RLINT_BINARY, ["--parse-graphql"], {
-      input: JSON.stringify(sources.map(source => source.text)),
-      encoding: "utf8",
-      maxBuffer: 256 * 1024 * 1024,
-    });
-    if (parsed.error !== undefined) throw parsed.error;
-    if (parsed.status !== 0) throw new Error(parsed.stderr.trim());
-    return JSON.parse(parsed.stdout).map((wire, sourceIndex) => {
+    const parsed = hostCommand(
+      "parse-graphql",
+      JSON.stringify(sources.map(source => source.text)),
+      256 * 1024 * 1024,
+    );
+    return JSON.parse(parsed).map((wire, sourceIndex) => {
       const { text, filePath } = sources[sourceIndex];
       const source = new gql.Source(text, filePath);
       const tokens = wire.tokens.map(

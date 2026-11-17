@@ -1,0 +1,314 @@
+{
+  "generatedAt": "2026-11-17T21:25:41.894Z",
+  "machine": {
+    "cpu": "Apple M4 Pro",
+    "cores": 14,
+    "memoryGB": 24,
+    "os": "Darwin 25.5.0 arm64"
+  },
+  "versions": {
+    "node": "v24.22.3",
+    "lintrs": "38955c9+working-tree",
+    "eslint": "9.39.5",
+    "typescript-eslint": "8.72.2",
+    "typescript": "5.9.3",
+    "oxlint": "1.83.0",
+    "tsrs": "c21a36ef"
+  },
+  "target": {
+    "repo": "https://github.com/date-fns/date-fns",
+    "ref": "v4.1.0",
+    "commit": "313b902b9a72c64501074db9bc2b9897d2db5140"
+  },
+  "method": {
+    "runs": 7,
+    "warmups": 1,
+    "interleaved": true,
+    "timer": "/usr/bin/time -l (wall-clock 'real' and maximum resident set size)",
+    "cache": "ESLint --cache off; lintrs's Rust rule library prebuilt in its cache before timing"
+  },
+  "suites": [
+    {
+      "id": "typescript-eslint",
+      "title": "typescript-eslint recommendedTypeChecked",
+      "description": "An existing typed ESLint config, unchanged.",
+      "config": "typescript-eslint recommendedTypeChecked on src/**/*.ts (tests excluded), parserOptions.project",
+      "baseline": "eslint",
+      "files": 1228,
+      "scenarios": [
+        {
+          "id": "eslint",
+          "name": "ESLint",
+          "description": "eslint CLI, no cache",
+          "messages": 581,
+          "wallMs": {
+            "median": 3040,
+            "min": 3000,
+            "max": 3100,
+            "samples": [
+              3050,
+              3000,
+              3010,
+              3030,
+              3100,
+              3040,
+              3050
+            ]
+          },
+          "peakRssMB": {
+            "median": 983.640625,
+            "min": 982.546875,
+            "max": 1051.5,
+            "samples": [
+              995.578125,
+              1051.5,
+              983.078125,
+              983.640625,
+              992.8125,
+              982.546875,
+              983.484375
+            ]
+          }
+        },
+        {
+          "id": "lintrs",
+          "name": "lintrs",
+          "description": "lintrs CLI, default transport (tsrs session in a child process)",
+          "messages": 581,
+          "wallMs": {
+            "median": 3900,
+            "min": 3880,
+            "max": 3980,
+            "samples": [
+              3880,
+              3920,
+              3900,
+              3900,
+              3980,
+              3890,
+              3970
+            ]
+          },
+          "peakRssMB": {
+            "median": 645.03125,
+            "min": 630.296875,
+            "max": 683.96875,
+            "samples": [
+              630.296875,
+              645.03125,
+              636.59375,
+              641.265625,
+              670.3125,
+              680.015625,
+              683.96875
+            ]
+          }
+        },
+        {
+          "id": "lintrs-in-process",
+          "name": "lintrs (in-process)",
+          "description": "lintrs CLI with the in-process Node-API binding",
+          "messages": 581,
+          "wallMs": {
+            "median": 3840,
+            "min": 3790,
+            "max": 3890,
+            "samples": [
+              3790,
+              3840,
+              3850,
+              3870,
+              3890,
+              3810,
+              3820
+            ]
+          },
+          "peakRssMB": {
+            "median": 677.984375,
+            "min": 637.875,
+            "max": 682.765625,
+            "samples": [
+              682.765625,
+              641.859375,
+              637.875,
+              648.671875,
+              679.375,
+              677.984375,
+              680.234375
+            ]
+          }
+        }
+      ],
+      "parity": {
+        "lintrs": {
+          "onlyBaseline": 0,
+          "onlyThis": 0,
+          "messageTextDifferences": 3,
+          "examples": [
+            {
+              "location": "locale/_lib/buildLocalizeFn/index.ts:29:49:@typescript-eslint/no-redundant-type-constituents",
+              "baseline": "0 | 1 | 2 | 10 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 11 is overridden by number in this union type.",
+              "lintrs": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 is overridden by number in this union type."
+            },
+            {
+              "location": "locale/_lib/buildLocalizeFn/index.ts:44:45:@typescript-eslint/no-redundant-type-constituents",
+              "baseline": "0 | 1 | 2 | 10 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 11 is overridden by number in this union type.",
+              "lintrs": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 is overridden by number in this union type."
+            },
+            {
+              "location": "locale/types.ts:225:38:@typescript-eslint/no-redundant-type-constituents",
+              "baseline": "0 | 1 | 2 | 10 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 11 is overridden by number in this union type.",
+              "lintrs": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 is overridden by number in this union type."
+            }
+          ]
+        },
+        "lintrs-in-process": {
+          "onlyBaseline": 0,
+          "onlyThis": 0,
+          "messageTextDifferences": 3,
+          "examples": [
+            {
+              "location": "locale/_lib/buildLocalizeFn/index.ts:29:49:@typescript-eslint/no-redundant-type-constituents",
+              "baseline": "0 | 1 | 2 | 10 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 11 is overridden by number in this union type.",
+              "lintrs-in-process": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 is overridden by number in this union type."
+            },
+            {
+              "location": "locale/_lib/buildLocalizeFn/index.ts:44:45:@typescript-eslint/no-redundant-type-constituents",
+              "baseline": "0 | 1 | 2 | 10 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 11 is overridden by number in this union type.",
+              "lintrs-in-process": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 is overridden by number in this union type."
+            },
+            {
+              "location": "locale/types.ts:225:38:@typescript-eslint/no-redundant-type-constituents",
+              "baseline": "0 | 1 | 2 | 10 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 11 is overridden by number in this union type.",
+              "lintrs-in-process": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 is overridden by number in this union type."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "custom-typed-rule",
+      "title": "One custom typed rule: JS vs Rust",
+      "description": "A single rule that asks the checker for the type of every call expression and reports unions, written once in JS and once in Rust.",
+      "config": "bench/call-returns-union on src/**/*.ts (tests excluded), parserOptions.project",
+      "baseline": "eslint-js",
+      "files": 1228,
+      "scenarios": [
+        {
+          "id": "eslint-js",
+          "name": "ESLint (JS rule)",
+          "description": "eslint CLI running the JS rule",
+          "messages": 355,
+          "wallMs": {
+            "median": 2150,
+            "min": 2130,
+            "max": 2190,
+            "samples": [
+              2150,
+              2140,
+              2150,
+              2170,
+              2150,
+              2190,
+              2130
+            ]
+          },
+          "peakRssMB": {
+            "median": 933.984375,
+            "min": 921.59375,
+            "max": 944.59375,
+            "samples": [
+              921.59375,
+              926.171875,
+              933.984375,
+              923.609375,
+              939.859375,
+              940.90625,
+              944.59375
+            ]
+          }
+        },
+        {
+          "id": "lintrs-js",
+          "name": "lintrs (JS rule)",
+          "description": "lintrs in-process running the same JS rule",
+          "messages": 362,
+          "wallMs": {
+            "median": 1250,
+            "min": 1230,
+            "max": 1260,
+            "samples": [
+              1260,
+              1240,
+              1230,
+              1260,
+              1240,
+              1260,
+              1250
+            ]
+          },
+          "peakRssMB": {
+            "median": 382.53125,
+            "min": 381.234375,
+            "max": 384.109375,
+            "samples": [
+              382.53125,
+              382.03125,
+              383.65625,
+              382.28125,
+              384.109375,
+              381.234375,
+              383.078125
+            ]
+          }
+        },
+        {
+          "id": "lintrs-rust",
+          "name": "lintrs (Rust rule)",
+          "description": "lintrs in-process running the rule written in Rust (library already built and cached)",
+          "messages": 362,
+          "wallMs": {
+            "median": 870,
+            "min": 850,
+            "max": 910,
+            "samples": [
+              880,
+              860,
+              870,
+              870,
+              850,
+              870,
+              910
+            ]
+          },
+          "peakRssMB": {
+            "median": 326.625,
+            "min": 324.359375,
+            "max": 329.09375,
+            "samples": [
+              327.796875,
+              329.09375,
+              325.671875,
+              326.625,
+              324.359375,
+              324.828125,
+              327.875
+            ]
+          }
+        }
+      ],
+      "parity": {
+        "lintrs-js": {
+          "onlyBaseline": 0,
+          "onlyThis": 7,
+          "messageTextDifferences": 0
+        },
+        "lintrs-rust": {
+          "onlyBaseline": 0,
+          "onlyThis": 7,
+          "messageTextDifferences": 0
+        }
+      }
+    }
+  ]
+}

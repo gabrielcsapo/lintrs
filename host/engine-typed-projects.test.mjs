@@ -153,7 +153,7 @@ test("source file enumeration stays lazy and preserves EOF, identities, and expo
       `export interface Dependency${index} { readonly value: string }\n`,
     );
   const profile = join(f.dir, "profile.json");
-  const actual = run(f, [], { RLINT_TYPE_PROFILE: profile });
+  const actual = run(f, [], { LINTRS_TYPE_PROFILE: profile });
   assert.equal(actual.status, 0, actual.stderr);
   assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
   const timing = JSON.parse(readFileSync(profile, "utf8"));

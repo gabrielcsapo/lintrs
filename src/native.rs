@@ -13,7 +13,11 @@ use std::ffi::CStr;
 #[cfg(feature = "in-process-node")]
 use std::ffi::{c_char, c_void};
 #[cfg(feature = "typed-native")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "typed-native")]
 use std::sync::{Mutex, OnceLock};
+#[cfg(feature = "typed-native")]
+use std::time::Instant;
 
 // Boundary types must resolve to this crate's dependency graph, never to an
 // instance the plugin may also depend on. Re-exporting them lets the macro
@@ -38,20 +42,20 @@ pub mod ts {
 /// the in-process binding. A library built for any other combination refuses
 /// to load.
 pub const ABI_FINGERPRINT: &str = concat!(
-    "rlint/",
+    "lintrs/",
     env!("CARGO_PKG_VERSION"),
     "/tsrs-c21a36ef/rustc-",
-    env!("RLINT_RUSTC_VERSION"),
+    env!("LINTRS_RUSTC_VERSION"),
     "/",
-    env!("RLINT_BUILD_ID")
+    env!("LINTRS_BUILD_ID")
 );
 
 /// Exposed for the single-copy guarantee: a rule library resolves this static
 /// in the already-loaded image, so its address must match ours.
-pub static RLINT_PROBE: u8 = 0x42;
+pub static LINTRS_PROBE: u8 = 0x42;
 
 pub fn probe_address() -> usize {
-    &RLINT_PROBE as *const u8 as usize
+    &LINTRS_PROBE as *const u8 as usize
 }
 
 pub trait Rule {
@@ -201,7 +205,7 @@ pub fn simple<R: Rule + Default + 'static>(_options: &Value) -> Result<Box<dyn R
 #[macro_export]
 macro_rules! export_rules {
     ($($name:literal => $create:expr),+ $(,)?) => {
-        static __RLINT_RULES: &[$crate::native::RuleEntry] = &[
+        static __LINTRS_RULES: &[$crate::native::RuleEntry] = &[
             $(
                 $crate::native::RuleEntry {
                     name: $name,
@@ -217,15 +221,15 @@ macro_rules! export_rules {
                 }
             ),+
         ];
-        static __RLINT_BUNDLE: $crate::native::RulesBundle =
+        static __LINTRS_BUNDLE: $crate::native::RulesBundle =
             $crate::native::RulesBundle {
                 fingerprint: $crate::native::ABI_FINGERPRINT,
-                rules: __RLINT_RULES,
+                rules: __LINTRS_RULES,
             };
         #[allow(improper_ctypes_definitions)]
         #[unsafe(no_mangle)]
-        pub extern "C" fn rlint_rules_v0() -> &'static $crate::native::RulesBundle {
-            &__RLINT_BUNDLE
+        pub extern "C" fn lintrs_rules_v0() -> &'static $crate::native::RulesBundle {
+            &__LINTRS_BUNDLE
         }
     };
 }
@@ -252,6 +256,58 @@ const RTLD_NODELETE: i32 = 0x1000;
 #[cfg(feature = "typed-native")]
 static BUNDLES: OnceLock<Mutex<HashMap<String, &'static RulesBundle>>> = OnceLock::new();
 
+/// Per-rule timing for TIMING / LINTRS_TYPE_PROFILE: the number of sessions
+/// with a registered profiler clock (`profileClock`). Timing is on while any
+/// is registered, so normal runs never read the clock around a rule call, and
+/// one --concurrency worker finishing does not switch it off for the others.
+#[cfg(feature = "typed-native")]
+static PROFILERS: AtomicUsize = AtomicUsize::new(0);
+/// Rule id -> (milliseconds, calls) across every file since the last take.
+#[cfg(feature = "typed-native")]
+static RULE_TIMES: Mutex<Option<HashMap<String, (f64, u64)>>> = Mutex::new(None);
+
+#[cfg(feature = "typed-native")]
+pub(crate) fn profiler_registered(registered: bool) {
+    if registered {
+        PROFILERS.fetch_add(1, Ordering::AcqRel);
+    } else {
+        let _ = PROFILERS.fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+            count.checked_sub(1)
+        });
+    }
+}
+
+/// Returns and clears the accumulated per-rule times as
+/// `{ ruleId: { ms, calls } }`; calls count `initialize` plus each `visit`.
+#[cfg(feature = "typed-native")]
+pub(crate) fn take_rule_times() -> Value {
+    let times = RULE_TIMES
+        .lock()
+        .map(|mut times| times.take().unwrap_or_default())
+        .unwrap_or_default();
+    Value::Object(
+        times
+            .into_iter()
+            .map(|(id, (ms, calls))| (id, serde_json::json!({ "ms": ms, "calls": calls })))
+            .collect(),
+    )
+}
+
+/// Times `action` into `times[index]` when profiling, else just runs it.
+#[cfg(feature = "typed-native")]
+fn timed(times: &mut Option<Vec<(f64, u64)>>, index: usize, action: impl FnOnce()) {
+    match times {
+        None => action(),
+        Some(times) => {
+            let start = Instant::now();
+            action();
+            let entry = &mut times[index];
+            entry.0 += start.elapsed().as_secs_f64() * 1000.0;
+            entry.1 += 1;
+        }
+    }
+}
+
 #[cfg(feature = "typed-native")]
 unsafe fn load_library(path: &str) -> Result<&'static RulesBundle, String> {
     let path_c = std::ffi::CString::new(path).map_err(|_| format!("bad path {path}"))?;
@@ -267,9 +323,9 @@ unsafe fn load_library(path: &str) -> Result<&'static RulesBundle, String> {
         };
         return Err(format!("dlopen {path}: {error}"));
     }
-    let symbol = unsafe { dlsym(handle, c"rlint_rules_v0".as_ptr()) };
+    let symbol = unsafe { dlsym(handle, c"lintrs_rules_v0".as_ptr()) };
     if symbol.is_null() {
-        return Err(format!("{path} does not export rlint_rules_v0"));
+        return Err(format!("{path} does not export lintrs_rules_v0"));
     }
     let bundle_fn: extern "C" fn() -> &'static RulesBundle = unsafe { std::mem::transmute(symbol) };
     let bundle = bundle_fn();
@@ -288,10 +344,10 @@ unsafe fn load_library(path: &str) -> Result<&'static RulesBundle, String> {
 /// exists in prepared builds (`typed-native`).
 #[cfg(feature = "typed-native")]
 unsafe fn run(
-    call: &mut tsrs_api::native_rules::RlintNativeCall<'_>,
-    specs: &[tsrs_api::native_rules::RlintNativeRuleSpec],
+    call: &mut tsrs_api::native_rules::LintrsNativeCall<'_>,
+    specs: &[tsrs_api::native_rules::LintrsNativeRuleSpec],
     libraries: &[String],
-) -> Result<Vec<tsrs_api::native_rules::RlintNativeDiagnostic>, String> {
+) -> Result<Vec<tsrs_api::native_rules::LintrsNativeDiagnostic>, String> {
     let cache = BUNDLES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut cache = cache.lock().unwrap();
     let mut bundles = Vec::with_capacity(libraries.len());
@@ -330,14 +386,17 @@ unsafe fn run(
     }
     let mut diagnostics = Vec::new();
     let mut listeners: HashMap<Kind, Vec<usize>> = HashMap::new();
+    let mut times = (PROFILERS.load(Ordering::Acquire) > 0).then(|| vec![(0.0, 0); rules.len()]);
+    #[allow(clippy::too_many_arguments)]
     fn visit(
         node: P<Node>,
         rules: &[Box<dyn Rule>],
         listeners: &mut HashMap<Kind, Vec<usize>>,
-        call: &mut tsrs_api::native_rules::RlintNativeCall<'_>,
-        specs: &[tsrs_api::native_rules::RlintNativeRuleSpec],
+        call: &mut tsrs_api::native_rules::LintrsNativeCall<'_>,
+        specs: &[tsrs_api::native_rules::LintrsNativeRuleSpec],
         options: &[Value],
         diagnostics: &mut Vec<Diagnostic>,
+        times: &mut Option<Vec<(f64, u64)>>,
     ) {
         let kind = node.kind();
         let active = listeners
@@ -360,10 +419,19 @@ unsafe fn run(
                 rule_id: &specs[index].id,
                 diagnostics,
             };
-            rule.visit(node, &mut context);
+            timed(times, index, || rule.visit(node, &mut context));
         }
         node.for_each_child(&mut |child| {
-            visit(child, rules, listeners, call, specs, options, diagnostics);
+            visit(
+                child,
+                rules,
+                listeners,
+                call,
+                specs,
+                options,
+                diagnostics,
+                times,
+            );
             false
         });
     }
@@ -376,7 +444,7 @@ unsafe fn run(
             rule_id: &specs[index].id,
             diagnostics: &mut diagnostics,
         };
-        rule.initialize(&mut context);
+        timed(&mut times, index, || rule.initialize(&mut context));
     }
     call.source_file.as_node().for_each_child(&mut |child| {
         visit(
@@ -387,11 +455,22 @@ unsafe fn run(
             specs,
             &options,
             &mut diagnostics,
+            &mut times,
         );
         false
     });
+    if let Some(times) = times
+        && let Ok(mut totals) = RULE_TIMES.lock()
+    {
+        let totals = totals.get_or_insert_with(HashMap::new);
+        for (spec, (ms, calls)) in specs.iter().zip(times) {
+            let entry = totals.entry(spec.id.clone()).or_insert((0.0, 0));
+            entry.0 += ms;
+            entry.1 += calls;
+        }
+    }
     // tsrs positions are UTF-8 byte offsets; everything past this boundary
-    // (and every other rlint path) uses UTF-16 code units, so convert here.
+    // (and every other lintrs path) uses UTF-16 code units, so convert here.
     let text = call.source_file.text();
     let utf16 = |offset: u32| -> u32 {
         text.get(..offset as usize)
@@ -400,31 +479,35 @@ unsafe fn run(
     };
     Ok(diagnostics
         .into_iter()
-        .map(|diagnostic| tsrs_api::native_rules::RlintNativeDiagnostic {
-            rule_id: diagnostic.rule_id,
-            message: diagnostic.message,
-            pos: utf16(diagnostic.pos),
-            end: utf16(diagnostic.end),
-            fix: diagnostic
-                .fix
-                .map(|fix| tsrs_api::native_rules::RlintNativeFix {
-                    pos: utf16(fix.pos),
-                    end: utf16(fix.end),
-                    text: fix.text,
-                }),
-            suggestions: diagnostic
-                .suggestions
-                .into_iter()
-                .map(|suggestion| tsrs_api::native_rules::RlintNativeSuggestion {
-                    desc: suggestion.desc,
-                    fix: tsrs_api::native_rules::RlintNativeFix {
-                        pos: utf16(suggestion.fix.pos),
-                        end: utf16(suggestion.fix.end),
-                        text: suggestion.fix.text,
-                    },
-                })
-                .collect(),
-        })
+        .map(
+            |diagnostic| tsrs_api::native_rules::LintrsNativeDiagnostic {
+                rule_id: diagnostic.rule_id,
+                message: diagnostic.message,
+                pos: utf16(diagnostic.pos),
+                end: utf16(diagnostic.end),
+                fix: diagnostic
+                    .fix
+                    .map(|fix| tsrs_api::native_rules::LintrsNativeFix {
+                        pos: utf16(fix.pos),
+                        end: utf16(fix.end),
+                        text: fix.text,
+                    }),
+                suggestions: diagnostic
+                    .suggestions
+                    .into_iter()
+                    .map(
+                        |suggestion| tsrs_api::native_rules::LintrsNativeSuggestion {
+                            desc: suggestion.desc,
+                            fix: tsrs_api::native_rules::LintrsNativeFix {
+                                pos: utf16(suggestion.fix.pos),
+                                end: utf16(suggestion.fix.end),
+                                text: suggestion.fix.text,
+                            },
+                        },
+                    )
+                    .collect(),
+            },
+        )
         .collect())
 }
 
@@ -433,7 +516,7 @@ pub fn install_runner() {
     tsrs_api::native_rules::set_native_rules_runner(run);
 }
 
-/// Single-copy proof hook for tests: a rule library may export `rlint_probe`
+/// Single-copy proof hook for tests: a rule library may export `lintrs_probe`
 /// returning `probe_address()`; the host compares it against its own address.
 #[cfg(feature = "in-process-node")]
 pub fn plugin_probe(library: &str) -> Option<usize> {
@@ -442,7 +525,7 @@ pub fn plugin_probe(library: &str) -> Option<usize> {
     if handle.is_null() {
         return None;
     }
-    let probe = unsafe { dlsym(handle, c"rlint_probe".as_ptr()) };
+    let probe = unsafe { dlsym(handle, c"lintrs_probe".as_ptr()) };
     if probe.is_null() {
         return None;
     }

@@ -3,7 +3,13 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 
-export function translateFlags(source, target, label, omitted = []) {
+export function translateFlags(
+  source,
+  target,
+  label,
+  omitted = [],
+  ignoredBits = 0,
+) {
   const bits = new Map(omitted.map(name => [source[name], 0]));
   const cache = new Map();
   for (const [name, value] of Object.entries(source)) {
@@ -18,7 +24,7 @@ export function translateFlags(source, target, label, omitted = []) {
   }
   return value => {
     if (cache.has(value)) return cache.get(value);
-    let remaining = value;
+    let remaining = value & ~ignoredBits;
     let translated = 0;
     for (const [input, output] of bits) {
       if ((remaining & input) !== 0) {
@@ -37,11 +43,14 @@ export function createFlags(sdk) {
   const flags = {
     type: translateFlags(sdk.api.TypeFlags, ts.TypeFlags, "TypeFlags"),
     // These tsrs checker caches have no TypeScript 6 flag equivalents.
-    object: translateFlags(sdk.api.ObjectFlags, ts.ObjectFlags, "ObjectFlags", [
-      "MembersResolved",
-      "IsUniformEnumComputed",
-      "IsUniformEnum",
-    ]),
+    object: translateFlags(
+      sdk.api.ObjectFlags,
+      ts.ObjectFlags,
+      "ObjectFlags",
+      ["MembersResolved", "IsUniformEnumComputed", "IsUniformEnum"],
+      // tsrs-only memo bits 30-31 (IsWeakType*, ShouldNormalize*), unnamed in the SDK.
+      0xc0000000,
+    ),
     symbol: translateFlags(sdk.api.SymbolFlags, ts.SymbolFlags, "SymbolFlags", [
       "ConstEnumOnlyModule",
     ]),

@@ -162,6 +162,47 @@ test("oxlint-disable comments are ignored like ESLint", async t => {
   assert.equal(result.suppressedMessages.length, 0);
 });
 
+// oxlint picks its own output format from the environment (an AI agent,
+// GITHUB_ACTIONS, else its default), and its default and GitHub formats print
+// a "Found … / Finished in …" summary even with --silent. Run as a plain
+// terminal and as GitHub Actions: stdout must still be exactly lintrs' JSON.
+// Agent detection is switched off with empty values, which oxlint treats as
+// unset, so this does not pass vacuously when the tests run under an agent.
+test("oxlint's own output never reaches stdout, whatever environment it detects", t => {
+  const f = fixture(t, {
+    rules: { "no-debugger": "error" },
+    source: "debugger;\n",
+  });
+  const noAgent = Object.fromEntries(
+    [
+      "AI_AGENT",
+      "CLAUDECODE",
+      "CLAUDE_CODE",
+      "REPL_ID",
+      "GEMINI_CLI",
+      "CODEX_SANDBOX",
+      "CODEX_THREAD_ID",
+      "COPILOT_CLI",
+      "OPENCODE",
+      "JUNIE_DATA",
+      "JUNIE_SHIM_PATH",
+      "CURSOR_AGENT",
+    ].map(name => [name, ""]),
+  );
+  for (const environment of [
+    { ...noAgent, GITHUB_ACTIONS: "" },
+    { ...noAgent, GITHUB_ACTIONS: "true" },
+  ]) {
+    const actual = run(f, [], environment);
+    assert.equal(actual.status, 1, actual.stderr);
+    assert.doesNotMatch(actual.stdout, /Finished in|warnings and/u);
+    assert.equal(
+      JSON.parse(actual.stdout)[0].messages[0].ruleId,
+      "no-debugger",
+    );
+  }
+});
+
 test("invalid syntax fails the run rather than returning a partial result", t => {
   const f = fixture(t, {
     rules: { "no-debugger": "error" },

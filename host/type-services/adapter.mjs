@@ -1,7 +1,7 @@
 import { createLazyObjects } from "../lazy-objects.mjs";
 import { createFlags } from "./flags.mjs";
 import { createQueries } from "./queries.mjs";
-import { IdentityMap } from "./state.mjs";
+import { IdentityMap, NodeProxies } from "./state.mjs";
 import { createWrap } from "./wrap.mjs";
 import { createWrapping, displayParts, docTags } from "./wrapping.mjs";
 
@@ -29,7 +29,7 @@ export function compatibility(
     symbolDocs: new IdentityMap(),
     signatureDocs: new IdentityMap(),
     declarationHeaders: new Map(),
-    nodeProxies: new Map(),
+    nodeProxies: new NodeProxies(),
     compactOriginals: new IdentityMap(),
     aliasedSymbols: new IdentityMap(),
     symbolStats: { headers: 0, nodes: 0, hydrations: 0, aliasHits: 0 },

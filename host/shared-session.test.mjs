@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Worker } from "node:worker_threads";
 
-const bindingPath = process.env.RLINT_IN_PROCESS_BINDING;
+const bindingPath = process.env.LINTRS_IN_PROCESS_BINDING;
 const binding =
   bindingPath === undefined
     ? undefined
@@ -49,7 +49,7 @@ test(
   "shared sessions reuse one snapshot across threads and retain it after a worker releases",
   { skip: binding === undefined },
   async t => {
-    const directory = mkdtempSync(join(tmpdir(), "rlint-shared-"));
+    const directory = mkdtempSync(join(tmpdir(), "lintrs-shared-"));
     t.after(() => rmSync(directory, { recursive: true, force: true }));
     const file = join(directory, "sample.ts");
     writeFileSync(file, "export const value: string = 'hello';\n");

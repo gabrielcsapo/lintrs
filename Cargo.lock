@@ -407,6 +407,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "lintrs"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "apollo-parser",
+ "clap",
+ "oxc_allocator",
+ "oxc_parser",
+ "oxc_span",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tsrs_api",
+ "tsrs_api_transport",
+ "tsrs_ast",
+ "tsrs_checker",
+ "tsrs_compiler",
+ "tsrs_core",
+ "tsrs_scanner",
+ "tsrs_tsoptions",
+ "tsrs_vfs",
+]
+
+[[package]]
+name = "lintrs-node"
+version = "0.0.1"
+dependencies = [
+ "lintrs",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -786,38 +818,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "rlint"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "apollo-parser",
- "clap",
- "oxc_allocator",
- "oxc_parser",
- "oxc_span",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "tsrs_api",
- "tsrs_api_transport",
- "tsrs_ast",
- "tsrs_checker",
- "tsrs_compiler",
- "tsrs_core",
- "tsrs_scanner",
- "tsrs_tsoptions",
- "tsrs_vfs",
-]
-
-[[package]]
-name = "rlint-node"
-version = "0.1.0"
-dependencies = [
- "rlint",
-]
 
 [[package]]
 name = "rowan"

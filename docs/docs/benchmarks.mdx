@@ -1,0 +1,35 @@
+---
+description: Measured wall time, peak memory and diagnostic parity for lintrs and ESLint on date-fns, including a custom typed rule written in JS and in Rust.
+---
+
+# Benchmarks
+
+Two suites on date-fns. Numbers come from `docs/bench/results.json`, produced
+by `npm run bench` (harness in `bench/`).
+
+import Benchmarks, { BenchmarkMethodology } from "../components/Benchmarks";
+
+<Benchmarks />
+
+## Reading the results
+
+- **Stock typed rules**: lintrs is currently slower than ESLint and uses less
+  memory, with the same diagnostics. The difference is moving each type
+  answer from the Rust checker into the objects these JS rules expect, not the
+  checker or the rules; see
+  [why](/guide/limitations#typed-javascript-rules-are-slower-than-eslint).
+  [Profiling](/guide/profiling) shows where it goes per rule (`TIMING=1`).
+- **Message text differences** in the stock suite are the order of union
+  members in three `no-redundant-type-constituents` messages (`0 | 1 | 2 | 10
+| 3 | …` against `0 | 1 | 2 | 3 | … | 10`): the same type, printed in
+  TypeScript's internal type order. That order varies between ESLint's own
+  runs; lintrs printed it the same way every time.
+- **One checker-heavy custom rule**: the JS rule takes less wall time under
+  lintrs than ESLint. Its Rust version takes less still.
+- **Extra diagnostics** in the custom suite come from TypeScript 7 generic
+  inference (date-fns `ResultDate extends Date = DateType` infers a union),
+  not a rule bug.
+
+## Methodology
+
+<BenchmarkMethodology />

@@ -1,9 +1,9 @@
 //! Fixture rule crate used by host/native-*.test.mjs. Not shipped.
 
-use rlint::native::{Fix, Rule, RuleContext, Suggestion, probe_address};
-use rlint::ts::ast::Kind;
-use rlint::ts::core::P;
-use rlint::native::serde_json::Value;
+use lintrs::native::{Fix, Rule, RuleContext, Suggestion, probe_address};
+use lintrs::ts::ast::Kind;
+use lintrs::ts::core::P;
+use lintrs::native::serde_json::Value;
 
 /// Flags a `value` identifier whose type is `string`.
 #[derive(Default)]
@@ -14,7 +14,7 @@ impl Rule for ValueIsString {
         kind == Kind::Identifier
     }
 
-    fn visit(&self, node: P<rlint::ts::ast::Node>, context: &mut RuleContext<'_>) {
+    fn visit(&self, node: P<lintrs::ts::ast::Node>, context: &mut RuleContext<'_>) {
         if node.text() != "value" {
             return;
         }
@@ -55,12 +55,12 @@ impl Rule for RenameValue {
         kind == Kind::Identifier
     }
 
-    fn visit(&self, node: P<rlint::ts::ast::Node>, context: &mut RuleContext<'_>) {
+    fn visit(&self, node: P<lintrs::ts::ast::Node>, context: &mut RuleContext<'_>) {
         if node.text() != self.target {
             return;
         }
         let fix = Fix {
-            pos: rlint::ts::scanner::get_token_pos_of_node(node, context.source_file, false).max(0)
+            pos: lintrs::ts::scanner::get_token_pos_of_node(node, context.source_file, false).max(0)
                 as u32,
             end: node.end().max(0) as u32,
             text: self.replacement.clone(),
@@ -82,16 +82,16 @@ impl Rule for NoNonAsciiString {
         kind == Kind::StringLiteral
     }
 
-    fn visit(&self, node: P<rlint::ts::ast::Node>, context: &mut RuleContext<'_>) {
+    fn visit(&self, node: P<lintrs::ts::ast::Node>, context: &mut RuleContext<'_>) {
         if node.text().chars().any(|c| !c.is_ascii()) {
             context.report(node, "non-ASCII string literal");
         }
     }
 }
 
-/// Single-copy probe: resolved against the already-loaded rlint dylib.
+/// Single-copy probe: resolved against the already-loaded lintrs dylib.
 #[unsafe(no_mangle)]
-pub extern "C" fn rlint_probe() -> usize {
+pub extern "C" fn lintrs_probe() -> usize {
     probe_address()
 }
 
@@ -124,7 +124,7 @@ impl Rule for SuggestRename {
         kind == Kind::Identifier
     }
 
-    fn visit(&self, node: P<rlint::ts::ast::Node>, context: &mut RuleContext<'_>) {
+    fn visit(&self, node: P<lintrs::ts::ast::Node>, context: &mut RuleContext<'_>) {
         if node.text() != self.target {
             return;
         }
@@ -134,7 +134,7 @@ impl Rule for SuggestRename {
             vec![Suggestion {
                 desc: format!("Replace with '{}'", self.replacement),
                 fix: Fix {
-                    pos: rlint::ts::scanner::get_token_pos_of_node(node, context.source_file, false)
+                    pos: lintrs::ts::scanner::get_token_pos_of_node(node, context.source_file, false)
                         .max(0) as u32,
                     end: node.end().max(0) as u32,
                     text: self.replacement.clone(),
@@ -144,9 +144,9 @@ impl Rule for SuggestRename {
     }
 }
 
-rlint::export_rules! {
-    "value-is-string" => rlint::native::simple::<ValueIsString>,
+lintrs::export_rules! {
+    "value-is-string" => lintrs::native::simple::<ValueIsString>,
     "rename-value" => rename_value,
     "suggest-rename" => suggest_rename,
-    "no-non-ascii-string" => rlint::native::simple::<NoNonAsciiString>,
+    "no-non-ascii-string" => lintrs::native::simple::<NoNonAsciiString>,
 }

@@ -1,4 +1,4 @@
-pub(crate) fn rlint_is_type_assignable_to_many(
+pub(crate) fn lintrs_is_type_assignable_to_many(
     host: &dyn CheckerHost,
     p: &Params,
 ) -> CheckerResult<Value> {

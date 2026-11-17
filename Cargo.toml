@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [".", "rlint-node"]
+members = [".", "lintrs-node"]
 
 [workspace.package]
 edition = "2024"
@@ -29,21 +29,21 @@ tsrs_compiler = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2d
 tsrs_vfs = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
 
 [package]
-name = "rlint"
-version = "0.1.0"
+name = "lintrs"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 description = "Run ESLint-compatible rules with Rust parsing and native TypeScript type services"
 license = "MIT"
-repository = "https://github.com/gabrielcsapo/rlint"
-homepage = "https://github.com/gabrielcsapo/rlint"
+repository = "https://github.com/gabrielcsapo/lintrs"
+homepage = "https://github.com/gabrielcsapo/lintrs"
 readme = "README.md"
 keywords = ["eslint", "lint", "typescript", "oxc", "linter"]
 categories = ["development-tools", "command-line-utilities"]
 
 [lib]
-name = "rlint"
+name = "lintrs"
 crate-type = ["rlib", "dylib"]
 
 [features]
@@ -51,7 +51,7 @@ in-process-node = []
 typed-native = ["in-process-node"]
 
 [[bin]]
-name = "rlint"
+name = "lintrs"
 path = "src/main.rs"
 
 [dependencies]

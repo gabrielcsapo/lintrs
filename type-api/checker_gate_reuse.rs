@@ -77,7 +77,7 @@ pub(crate) fn pin(program: &'static Program) -> ApiCheckerGatePin {
 
 pub(crate) fn reuse_enabled() -> bool {
     static ENABLED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-        std::env::var_os("RLINT_REUSE_CHECKER_GATE").is_some_and(|value| value == "1")
+        std::env::var_os("LINTRS_REUSE_CHECKER_GATE").is_some_and(|value| value == "1")
     });
     *ENABLED
 }

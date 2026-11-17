@@ -1,5 +1,5 @@
 #[test]
-fn rlint_cached_file_symbols_match_original_search_and_release() {
+fn lintrs_cached_file_symbols_match_original_search_and_release() {
     const SOURCE: &str = r#"
 import { Box as ImportedBox, exported } from './other';
 export { exported as renamed };

@@ -1,6 +1,6 @@
 {
-  "name": "rlint",
-  "version": "0.1.0",
+  "name": "lintrs-workspace",
+  "version": "0.0.1",
   "private": true,
   "description": "Run ESLint-compatible rules with Rust parsing and native TypeScript type services",
   "license": "MIT",
@@ -10,17 +10,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/gabrielcsapo/rlint"
+    "url": "https://github.com/gabrielcsapo/lintrs"
   },
   "scripts": {
-    "prepare:native": "node type-api/prepare.mjs --output /tmp/rlint-native-build",
+    "prepare:native": "node type-api/prepare.mjs --output /tmp/lintrs-native-build",
     "test:rust": "cargo test --locked",
     "test:host": "node --conditions=@typescript/source --experimental-transform-types --test --test-concurrency=1 host/*.test.mjs",
     "pretest:host": "cargo build --locked",
     "dist": "node scripts/dist.mjs",
     "build:native": "node scripts/build-native.mjs",
-    "format": "prettier --write \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\"",
-    "format:check": "prettier --check \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\""
+    "format": "prettier --write \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\" \"docs/**/*.{md,mdx,ts,tsx,css}\" \"docs/*.{ts,json}\"",
+    "format:check": "prettier --check \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\" \"docs/**/*.{md,mdx,ts,tsx,css}\" \"docs/*.{ts,json}\"",
+    "docs:dev": "npm --prefix docs run dev",
+    "docs:build": "npm --prefix docs run build",
+    "bench": "node bench/setup.mjs && node bench/run.mjs",
+    "pack:npm": "node scripts/pack-npm.mjs"
   },
   "dependencies": {
     "eslint": "^9.39.5",
@@ -36,5 +40,9 @@
   "exports": {
     ".": "./host/cli.mjs",
     "./native": "./host/native/index.mjs"
-  }
+  },
+  "homepage": "https://gabrielcsapo.github.io/lintrs/",
+  "workspaces": [
+    "npm/lintrs"
+  ]
 }

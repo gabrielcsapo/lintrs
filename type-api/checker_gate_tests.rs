@@ -1,5 +1,5 @@
 #[test]
-fn rlint_gate_cache_shares_identity_and_releases_after_the_last_snapshot_and_lease() {
+fn lintrs_gate_cache_shares_identity_and_releases_after_the_last_snapshot_and_lease() {
     let s = session_with(&[], &["/p/tsconfig.json"]);
     let sd = s.session.snapshot_data(s.snapshot as u64).unwrap();
     let program = sd
@@ -30,7 +30,7 @@ fn rlint_gate_cache_shares_identity_and_releases_after_the_last_snapshot_and_lea
 }
 
 #[test]
-fn rlint_cached_and_uncached_gate_acquisitions_contend_on_the_same_gate() {
+fn lintrs_cached_and_uncached_gate_acquisitions_contend_on_the_same_gate() {
     bounded("cached gate contention", Duration::from_secs(10), || {
         let s = session_with(&[], &["/p/tsconfig.json"]);
         let sd = s.session.snapshot_data(s.snapshot as u64).unwrap();
@@ -64,7 +64,7 @@ fn rlint_cached_and_uncached_gate_acquisitions_contend_on_the_same_gate() {
 }
 
 #[test]
-fn rlint_concurrent_final_gate_pins_leave_no_global_entry() {
+fn lintrs_concurrent_final_gate_pins_leave_no_global_entry() {
     let s = session_with(&[], &["/p/tsconfig.json"]);
     let sd = s.session.snapshot_data(s.snapshot as u64).unwrap();
     let program = sd

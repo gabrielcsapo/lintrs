@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Builds a native rule crate against the installed rlint facade, or packages
+// Builds a native rule crate against the installed lintrs facade, or packages
 // a prebuilt library for one platform.
 //
 //   node host/native/build.mjs <crate-dir>                → build into cache
 //   node host/native/build.mjs <crate-dir> --out <dir>    → platform package
 //
-// Rule crates must NOT declare `rlint` as a Cargo dependency: they compile
-// against the rlint dylib via --extern so exactly one copy of rlint+tsrs
+// Rule crates must NOT declare `lintrs` as a Cargo dependency: they compile
+// against the lintrs dylib via --extern so exactly one copy of lintrs+tsrs
 // exists in the linting process.
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -42,7 +42,7 @@ function run(command, args, options = {}) {
 }
 
 // A rule crate must consume the facade through --extern, never through a
-// Cargo dependency (that would statically embed a second rlint+tsrs copy).
+// Cargo dependency (that would statically embed a second lintrs+tsrs copy).
 function checkManifest(crateDir) {
   const manifestPath = join(crateDir, "Cargo.toml");
   if (!existsSync(manifestPath))
@@ -58,15 +58,15 @@ function checkManifest(crateDir) {
       marks[index + 1]?.index,
     );
     if (!/^(?:dev-|build-)?dependencies\b/u.test(section)) continue;
-    if (/^\s*rlint\s*=/mu.test(body))
+    if (/^\s*lintrs\s*=/mu.test(body))
       throw new Error(
-        `${manifestPath} depends on the rlint crate; rule crates compile ` +
-          "against rlint through --extern instead — remove the dependency",
+        `${manifestPath} depends on the lintrs crate; rule crates compile ` +
+          "against lintrs through --extern instead — remove the dependency",
       );
     for (const dep of body.matchAll(/^\s*([A-Za-z0-9_-]+)\s*=/gmu))
       declared.push(dep[1]);
   }
-  // Any crate that is also part of rlint's graph cannot be a plugin
+  // Any crate that is also part of lintrs's graph cannot be a plugin
   // dependency: rustc would see two candidates for the name (the sdk's
   // --extern artifact and the plugin's own build) and either fail with an
   // ambiguity error or, worse, link an ABI-incompatible instance at the
@@ -85,10 +85,10 @@ function checkManifest(crateDir) {
   if (collisions.length > 0)
     throw new Error(
       `${manifestPath} depends on ${collisions.join(", ")}, which ` +
-        `rlint already ships in its dependency graph; rule crates cannot ` +
-        `depend on crates rlint contains — use the facade's re-exports ` +
-        `(rlint::native::serde_json, rlint::native::Value, rlint::ts::*) or ` +
-        `a crate rlint does not contain`,
+        `lintrs already ships in its dependency graph; rule crates cannot ` +
+        `depend on crates lintrs contains — use the facade's re-exports ` +
+        `(lintrs::native::serde_json, lintrs::native::Value, lintrs::ts::*) or ` +
+        `a crate lintrs does not contain`,
     );
   const crateTypeCdylib = /crate-type\s*=\s*\[[^\]]*"cdylib"/u.test(manifest);
   const name = /^\s*name\s*=\s*"([^"]+)"/mu.exec(manifest)?.[1];
@@ -119,7 +119,7 @@ function hashCrate(crateDir) {
 
 export function cacheRoot() {
   return join(
-    process.env.RLINT_CACHE_DIR ?? join(homedir(), ".cache", "rlint"),
+    process.env.LINTRS_CACHE_DIR ?? join(homedir(), ".cache", "lintrs"),
     "native-rules",
   );
 }
@@ -149,7 +149,7 @@ function withLock(directory, action) {
 
 /**
  * Builds `crateDir` and returns the path of the produced rule library.
- * Results are cached under RLINT_CACHE_DIR / ~/.cache/rlint keyed by the ABI
+ * Results are cached under LINTRS_CACHE_DIR / ~/.cache/lintrs keyed by the ABI
  * fingerprint and the crate contents.
  */
 export function buildCrate(crateDir) {
@@ -173,22 +173,46 @@ export function buildCrate(crateDir) {
     // The rule library must be produced by the same rustc that compiled the
     // binding; mismatched compilers produce incompatible Rust symbols.
     const fingerprintRustc = /\/rustc-([^/]+)/u.exec(abi)?.[1];
-    let rustc;
-    try {
-      rustc = execFileSync("rustc", ["-V"], { encoding: "utf8" }).trim();
-    } catch {
-      throw new Error(
-        "Building a native rule crate requires the Rust toolchain on PATH " +
-          `(this rlint needs rustc ${fingerprintRustc}); install it from ` +
-          "https://rustup.rs or use a prebuilt rule package",
-      );
+    const installHint =
+      `install it with \`rustup toolchain install ${fingerprintRustc}\` ` +
+      "or use a prebuilt rule package";
+    const toolchainEnv = {};
+    const rustup = spawnSync("rustup", ["--version"], { encoding: "utf8" });
+    if (rustup.error === undefined && rustup.status === 0) {
+      // rustup selects the toolchain: use the fingerprint's rustc no matter
+      // what the caller's default toolchain is.
+      const probe = spawnSync("rustc", ["-V"], {
+        encoding: "utf8",
+        env: { ...process.env, RUSTUP_TOOLCHAIN: fingerprintRustc },
+      });
+      const version = probe.stdout?.trim();
+      if (
+        probe.error !== undefined ||
+        probe.status !== 0 ||
+        !version.startsWith(`rustc ${fingerprintRustc}`)
+      )
+        throw new Error(
+          `Native rule crates must be built with rustc ${fingerprintRustc}; ` +
+            installHint,
+        );
+      toolchainEnv.RUSTUP_TOOLCHAIN = fingerprintRustc;
+    } else {
+      let rustc;
+      try {
+        rustc = execFileSync("rustc", ["-V"], { encoding: "utf8" }).trim();
+      } catch {
+        throw new Error(
+          "Building a native rule crate requires the Rust toolchain on PATH " +
+            `(this lintrs needs rustc ${fingerprintRustc}); install it from ` +
+            "https://rustup.rs or use a prebuilt rule package",
+        );
+      }
+      if (!rustc.startsWith(`rustc ${fingerprintRustc}`))
+        throw new Error(
+          `Native rule crates must be built with rustc ${fingerprintRustc} ` +
+            `(found ${rustc}); ${installHint}`,
+        );
     }
-    if (!rustc.startsWith(`rustc ${fingerprintRustc}`))
-      throw new Error(
-        `Native rule crates must be built with rustc ${fingerprintRustc} ` +
-          `(found ${rustc}); install it with \`rustup toolchain install ` +
-          `${fingerprintRustc}\` or use a prebuilt rule package`,
-      );
     const target = join(entry, "target");
     const rustflags =
       process.platform === "darwin"
@@ -196,7 +220,7 @@ export function buildCrate(crateDir) {
         : "-C prefer-dynamic";
     mkdirSync(entry, { recursive: true });
     writeFileSync(join(entry, "build.log"), `cargo rustc\n`);
-    // Every dep artifact from the rlint build is offered via --extern so
+    // Every dep artifact from the lintrs build is offered via --extern so
     // types shared with the facade (serde_json::Value, tsrs AST) are the
     // exact same crate instances; the crate's own Cargo deps cover the rest.
     const externs = [];
@@ -218,12 +242,12 @@ export function buildCrate(crateDir) {
         target,
         "--",
         "--extern",
-        `rlint=${nativeLibrary()}`,
+        `lintrs=${nativeLibrary()}`,
         ...externs,
         "-L",
         `dependency=${nativeDeps()}`,
       ],
-      { env: { ...process.env, RUSTFLAGS: rustflags } },
+      { env: { ...process.env, RUSTFLAGS: rustflags, ...toolchainEnv } },
     );
     const release = join(target, "release");
     const built = readdirSync(release).find(
@@ -256,9 +280,9 @@ export function packageCrate(crateDir, outDir) {
     join(outDir, "package.json"),
     JSON.stringify(
       {
-        name: `rlint-rule-${pkg}-${platformKey()}`,
+        name: `lintrs-rule-${pkg}-${platformKey()}`,
         version,
-        rlint: { library: file, abi: nativeAbi() },
+        lintrs: { library: file, abi: nativeAbi() },
       },
       null,
       2,

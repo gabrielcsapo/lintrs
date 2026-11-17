@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { hostCommand } from "./host-command.mjs";
 
 export function formatUnix(results) {
   let total = 0;
@@ -22,14 +22,7 @@ export function formatUnix(results) {
 }
 
 export function finalizeHost(output) {
-  if (process.env.RLINT_BINARY === undefined)
-    throw new Error("The Rust host binary is missing");
-  const finalized = spawnSync(process.env.RLINT_BINARY, ["--finalize-host"], {
-    input: JSON.stringify(output),
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-  });
-  if (finalized.error !== undefined) throw finalized.error;
-  if (finalized.status !== 0) throw new Error(finalized.stderr.trim());
-  return JSON.parse(finalized.stdout);
+  return JSON.parse(
+    hostCommand("finalize-host", JSON.stringify(output), 256 * 1024 * 1024),
+  );
 }

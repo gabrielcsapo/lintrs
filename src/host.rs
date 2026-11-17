@@ -75,14 +75,22 @@ fn source_comments(file_path: &Path, text: &str) -> anyhow::Result<Vec<Comment>>
     }
 }
 
+/// `--host-comments`: sources on stdin, their comments on stdout.
 pub fn parse_comments() -> anyhow::Result<()> {
+    let input = std::io::read_to_string(std::io::stdin().lock())?;
+    print!("{}", parse_comments_json(&input)?);
+    Ok(())
+}
+
+/// The `--host-comments` transform as a function, for the in-process binding.
+pub fn parse_comments_json(input: &str) -> anyhow::Result<String> {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct Source {
         file_path: PathBuf,
         text: String,
     }
-    let sources: Vec<Source> = serde_json::from_reader(std::io::stdin().lock())?;
+    let sources: Vec<Source> = serde_json::from_str(input)?;
     let comments = sources.into_iter().map(|source| {
         let index = LineIndex::with_js_line_terminators(&source.text, true);
         source_comments(&source.file_path, &source.text).map(|comments| comments.into_iter().map(|comment| {
@@ -96,8 +104,12 @@ pub fn parse_comments() -> anyhow::Result<()> {
             })
         }).collect::<Vec<_>>())
     }).collect::<anyhow::Result<Vec<_>>>()?;
-    serde_json::to_writer(std::io::stdout().lock(), &comments)?;
-    Ok(())
+    Ok(serde_json::to_string(&comments)?)
+}
+
+/// The `--finalize-host` transform as a function, for the in-process binding.
+pub fn finalize_json(input: &str) -> anyhow::Result<String> {
+    crate::output::json(&finalize(serde_json::from_str(input)?)?)
 }
 
 fn finalize_file(file: HostFile, known_rules: &HashSet<String>) -> anyhow::Result<LintResult> {
@@ -191,10 +203,10 @@ fn select_host_dir(candidates: &[PathBuf]) -> anyhow::Result<PathBuf> {
 
 fn host_dir() -> anyhow::Result<PathBuf> {
     let mut candidates = Vec::new();
-    if let Ok(directory) = std::env::var("RLINT_HOST_DIR") {
+    if let Ok(directory) = std::env::var("LINTRS_HOST_DIR") {
         candidates.push(PathBuf::from(directory));
     }
-    // <prefix>/bin/rlint resolves the installed host at <prefix>/host.
+    // <prefix>/bin/lintrs resolves the installed host at <prefix>/host.
     if let Ok(executable) = std::env::current_exe()
         && let Ok(canonical) = executable.canonicalize()
         && let Some(prefix) = canonical.parent().and_then(Path::parent)
@@ -205,7 +217,13 @@ fn host_dir() -> anyhow::Result<PathBuf> {
     select_host_dir(&candidates)
 }
 
-pub fn run(config: &Path, paths: &[PathBuf], quiet: bool, json: bool) -> anyhow::Result<bool> {
+pub fn run(
+    config: &Path,
+    paths: &[PathBuf],
+    quiet: bool,
+    json: bool,
+    concurrency: &str,
+) -> anyhow::Result<bool> {
     let script = host_dir()?.join("cli.mjs");
     let mut command = Command::new("node");
     command
@@ -219,23 +237,24 @@ pub fn run(config: &Path, paths: &[PathBuf], quiet: bool, json: bool) -> anyhow:
     if quiet {
         command.arg("--quiet");
     }
+    command.args(["--concurrency", concurrency]);
     if json {
         command.args(["--format", "json"]);
     }
     command.arg("--").args(paths);
-    command.env("RLINT_BINARY", std::env::current_exe()?);
-    // The native layout ships lib/librlint.node next to bin/rlint; point the
+    command.env("LINTRS_BINARY", std::env::current_exe()?);
+    // The native layout ships lib/liblintrs.node next to bin/lintrs; point the
     // host at it so typed services and native rules work without env setup.
-    if std::env::var_os("RLINT_IN_PROCESS_BINDING").is_none()
+    if std::env::var_os("LINTRS_IN_PROCESS_BINDING").is_none()
         && let Ok(executable) = std::env::current_exe()
         && let Ok(canonical) = executable.canonicalize()
         && let Some(bin) = canonical.parent()
     {
-        let binding = bin.join("../lib/librlint.node");
+        let binding = bin.join("../lib/liblintrs.node");
         if binding.exists() {
-            command.env("RLINT_IN_PROCESS_BINDING", binding);
-            if std::env::var_os("RLINT_TYPED_NATIVE").is_none() {
-                command.env("RLINT_TYPED_NATIVE", "1");
+            command.env("LINTRS_IN_PROCESS_BINDING", binding);
+            if std::env::var_os("LINTRS_TYPED_NATIVE").is_none() {
+                command.env("LINTRS_TYPED_NATIVE", "1");
             }
         }
     }

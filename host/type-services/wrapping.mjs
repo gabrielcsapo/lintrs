@@ -117,7 +117,8 @@ export function createWrapping(ctx) {
   const handleId = handle => `${handle.index}.${handle.kind}.${handle.path}`;
   const compactDeclaration = handle => {
     const id = handleId(handle);
-    if (nodeProxies.has(id)) return nodeProxies.get(id);
+    const existing = nodeProxies.get(handle.path, handle.index, () => id);
+    if (existing !== undefined) return existing;
     const header = declarationHeaders.get(id);
     let resolved;
     const raw = () => {
@@ -178,7 +179,7 @@ export function createWrapping(ctx) {
       },
     );
     compactOriginals.set(proxy, raw);
-    nodeProxies.set(id, proxy);
+    nodeProxies.set(handle.path, handle.index, () => id, proxy);
     symbolStats.nodes++;
     return proxy;
   };

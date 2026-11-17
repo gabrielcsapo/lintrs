@@ -88,6 +88,25 @@ unsafe extern "C" {
     ) -> i32;
     fn napi_get_undefined(env: Env, result: *mut Value) -> i32;
     fn napi_throw_error(env: Env, code: *const c_char, message: *const c_char) -> i32;
+    fn napi_create_reference(env: Env, value: Value, count: u32, result: *mut Value) -> i32;
+    fn napi_delete_reference(env: Env, reference: Value) -> i32;
+    fn napi_get_reference_value(env: Env, reference: Value, result: *mut Value) -> i32;
+    #[link_name = "napi_typeof"]
+    fn clock_typeof(env: Env, value: Value, result: *mut i32) -> i32;
+    #[link_name = "napi_get_typedarray_info"]
+    fn clock_typedarray_info(
+        env: Env,
+        value: Value,
+        kind: *mut i32,
+        length: *mut usize,
+        data: *mut *mut c_void,
+        buffer: *mut Value,
+        offset: *mut usize,
+    ) -> i32;
+    #[link_name = "napi_is_arraybuffer"]
+    fn clock_is_arraybuffer(env: Env, value: Value, result: *mut bool) -> i32;
+    #[link_name = "napi_is_detached_arraybuffer"]
+    fn clock_is_detached(env: Env, value: Value, result: *mut bool) -> i32;
 }
 
 static SHARED_SESSIONS: Mutex<Option<HashMap<String, Weak<SharedSession>>>> = Mutex::new(None);
@@ -105,6 +124,19 @@ struct NativeSession {
     session: RefCell<Option<Arc<Session>>>,
     requests: Cell<u64>,
     processing_ms: Cell<f64>,
+    /// Typed-native callbacks only: time spent before the checker runs
+    /// (receiver checks, reading and decoding arguments) and after it
+    /// (encoding the result into JS values).
+    arguments_ms: Cell<f64>,
+    results_ms: Cell<f64>,
+    /// Profiler clock: a napi reference to a Float64Array the host registered
+    /// with `profileClock`, or null. After each request Rust adds the time it
+    /// spent computing to [0], one to [1], and, when the array has a third
+    /// element, the whole time inside the native callback (converting
+    /// arguments and results included) to [2]. The host reads it before and
+    /// after a checker call to split the call into Rust compute, Node-API
+    /// conversion and the rest, with no extra call across the boundary.
+    clock: Cell<Value>,
 }
 
 impl NativeSession {
@@ -239,13 +271,133 @@ fn method(
     checked(unsafe { napi_set_named_property(env, object, name.as_ptr(), function) })
 }
 
-unsafe extern "C" fn finalize(_env: Env, data: *mut c_void, _hint: *mut c_void) {
+unsafe extern "C" fn finalize(env: Env, data: *mut c_void, _hint: *mut c_void) {
     let _ = std::panic::catch_unwind(|| {
         if !data.is_null() {
             // SAFETY: napi_wrap transfers this unique Box to the finalizer exactly once.
-            drop(unsafe { Box::from_raw(data.cast::<NativeSession>()) });
+            let state = unsafe { Box::from_raw(data.cast::<NativeSession>()) };
+            let clock = state.clock.replace(ptr::null_mut());
+            if !clock.is_null() {
+                // SAFETY: The reference was created in this environment by profile_clock.
+                unsafe { napi_delete_reference(env, clock) };
+                #[cfg(feature = "typed-native")]
+                crate::native::profiler_registered(false);
+            }
+            drop(state);
         }
     });
+}
+
+/// The registered clock's live Float64Array storage, or None when no clock
+/// is registered or its buffer is no longer an attached, ordinary
+/// Float64Array of at least two elements.
+fn clock_slots(env: Env, state: &NativeSession) -> Option<(*mut f64, usize)> {
+    let reference = state.clock.get();
+    if reference.is_null() {
+        return None;
+    }
+    let mut array = ptr::null_mut();
+    // SAFETY: The reference belongs to this environment and is kept alive by its refcount.
+    if unsafe { napi_get_reference_value(env, reference, &mut array) } != 0 || array.is_null() {
+        return None;
+    }
+    let (mut kind, mut length, mut data, mut buffer, mut offset) =
+        (0, 0, ptr::null_mut(), ptr::null_mut(), 0);
+    // SAFETY: All outputs are live stack slots; non-typed-array values return an error status.
+    let status = unsafe {
+        clock_typedarray_info(
+            env,
+            array,
+            &mut kind,
+            &mut length,
+            &mut data,
+            &mut buffer,
+            &mut offset,
+        )
+    };
+    let mut ordinary = false;
+    let mut detached = true;
+    // SAFETY: Both checks only read the buffer handle Node just returned.
+    if status != 0
+        || unsafe { clock_is_arraybuffer(env, buffer, &mut ordinary) } != 0
+        || unsafe { clock_is_detached(env, buffer, &mut detached) } != 0
+    {
+        return None;
+    }
+    // napi_float64_array is 8.
+    (kind == 8 && length >= 2 && ordinary && !detached && !data.is_null())
+        .then_some((data.cast::<f64>(), length))
+}
+
+/// Adds one request's Rust compute time to the registered clock, if any.
+fn publish_compute(env: Env, state: &NativeSession, ms: f64) {
+    if let Some((slots, _)) = clock_slots(env, state) {
+        // SAFETY: clock_slots validated an attached Float64Array of at least two elements; this
+        // runs on the environment's thread with no JS executing, so nothing else touches it.
+        unsafe {
+            *slots += ms;
+            *slots.add(1) += 1.0;
+        }
+    }
+}
+
+/// Adds one callback's whole native time (from entry to the finished result
+/// value) to the clock's third element, if it has one.
+fn publish_native(env: Env, state: &NativeSession, entered: Instant) {
+    if let Some((slots, length)) = clock_slots(env, state)
+        && length >= 3
+    {
+        // SAFETY: As in publish_compute; the length check covers the third element.
+        unsafe { *slots.add(2) += entered.elapsed().as_secs_f64() * 1000.0 };
+    }
+}
+
+unsafe extern "C" fn profile_clock(env: Env, info: CallbackInfo) -> Value {
+    boundary(env, || {
+        let ([array], this) = arguments(env, info)?;
+        let pointer = session_pointer(env, this)?;
+        // SAFETY: Node roots the validated receiver throughout this callback.
+        let state = unsafe { &*pointer };
+        let previous = state.clock.replace(ptr::null_mut());
+        if !previous.is_null() {
+            // SAFETY: The previous reference was created in this environment below.
+            checked(unsafe { napi_delete_reference(env, previous) })?;
+            #[cfg(feature = "typed-native")]
+            crate::native::profiler_registered(false);
+        }
+        let mut kind = 0;
+        // SAFETY: Node writes the value's type into a live slot.
+        checked(unsafe { clock_typeof(env, array, &mut kind) })?;
+        // undefined (0) or null (1) unregisters the clock.
+        if kind <= 1 {
+            return undefined(env);
+        }
+        let mut reference = ptr::null_mut();
+        // SAFETY: A strong reference keeps the array alive until it is replaced or finalized.
+        checked(unsafe { napi_create_reference(env, array, 1, &mut reference) })?;
+        state.clock.set(reference);
+        if clock_slots(env, state).is_none() {
+            state.clock.set(ptr::null_mut());
+            // SAFETY: Created just above in this environment.
+            checked(unsafe { napi_delete_reference(env, reference) })?;
+            return Err(
+                "profileClock requires an ordinary Float64Array of at least two elements"
+                    .to_owned(),
+            );
+        }
+        #[cfg(feature = "typed-native")]
+        crate::native::profiler_registered(true);
+        undefined(env)
+    })
+}
+
+/// `{ ruleId: { ms, calls } }` for native (Rust) rules since the last call.
+#[cfg(feature = "typed-native")]
+unsafe extern "C" fn native_rule_timing(env: Env, info: CallbackInfo) -> Value {
+    boundary(env, || {
+        let (_, _this) = arguments::<0>(env, info)?;
+        js_string(env, &crate::native::take_rule_times().to_string())
+    })
 }
 
 unsafe extern "C" fn create_session(env: Env, info: CallbackInfo) -> Value {
@@ -274,6 +426,9 @@ fn wrap_session(env: Env, shared: Arc<SharedSession>, attached: bool) -> Result<
         attached,
         requests: Cell::new(0),
         processing_ms: Cell::new(0.0),
+        arguments_ms: Cell::new(0.0),
+        results_ms: Cell::new(0.0),
+        clock: Cell::new(ptr::null_mut()),
     });
     let mut object = ptr::null_mut();
     // SAFETY: Node writes the new object handle to a live output slot.
@@ -283,6 +438,9 @@ fn wrap_session(env: Env, shared: Arc<SharedSession>, attached: bool) -> Result<
     method(env, object, c"timing", timing)?;
     method(env, object, c"resetTiming", reset_timing)?;
     method(env, object, c"share", share)?;
+    method(env, object, c"profileClock", profile_clock)?;
+    #[cfg(feature = "typed-native")]
+    method(env, object, c"nativeRuleTiming", native_rule_timing)?;
     #[cfg(feature = "typed-native")]
     typed::install(env, object)?;
     // SAFETY: Tagging precedes wrapping, and this object has not escaped to JavaScript.
@@ -397,6 +555,7 @@ fn shared_request(
 
 unsafe extern "C" fn request(env: Env, info: CallbackInfo) -> Value {
     boundary(env, || {
+        let entered = Instant::now();
         let ([method, params], this) = arguments(env, info)?;
         let method = string(env, method)?;
         let params = string(env, params)?;
@@ -410,12 +569,12 @@ unsafe extern "C" fn request(env: Env, info: CallbackInfo) -> Value {
             .ok_or("The in-process session is closed")?;
         let start = Instant::now();
         let response = shared_request(state, &session, &method, &params);
+        let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         state.requests.set(state.requests.get() + 1);
-        state
-            .processing_ms
-            .set(state.processing_ms.get() + start.elapsed().as_secs_f64() * 1000.0);
-        match response.map_err(|error| error.to_string())? {
-            tsrs_api::Response::Json(value) => js_string(env, &value),
+        state.processing_ms.set(state.processing_ms.get() + elapsed);
+        publish_compute(env, state, elapsed);
+        let value = match response.map_err(|error| error.to_string())? {
+            tsrs_api::Response::Json(value) => js_string(env, &value)?,
             tsrs_api::Response::Binary(value) => {
                 let mut result = ptr::null_mut();
                 // SAFETY: Node copies the live Rust byte vector into a managed Buffer.
@@ -428,9 +587,11 @@ unsafe extern "C" fn request(env: Env, info: CallbackInfo) -> Value {
                         &mut result,
                     )
                 })?;
-                Ok(result)
+                result
             }
-        }
+        };
+        publish_native(env, state, entered);
+        Ok(value)
     })
 }
 
@@ -456,10 +617,37 @@ unsafe extern "C" fn timing(env: Env, info: CallbackInfo) -> Value {
                 "ownerOpen": state.shared.open.load(Ordering::Acquire),
             },
             "enabled": true,
-            "totals": { "requestCount": state.requests.get(), "totalProcessingTimeMs": state.processing_ms.get() },
+            "totals": {
+                "requestCount": state.requests.get(),
+                "totalProcessingTimeMs": state.processing_ms.get(),
+                "typedArgumentsMs": state.arguments_ms.get(),
+                "typedResultsMs": state.results_ms.get(),
+            },
             "recentRequests": [],
         });
         js_string(env, &value.to_string())
+    })
+}
+
+/// `hostCommand(mode, input)`: the binary's helper modes (`--finalize-host`,
+/// `--host-comments`, `--parse-graphql`) in process, same input and output.
+/// The host otherwise spawns the binary for them, and on Linux that fork can
+/// fail with ENOMEM once oxlint has allocated its multi-GiB raw-transfer
+/// buffers: the default heuristic overcommit refuses to duplicate a writable
+/// mapping larger than RAM + swap.
+unsafe extern "C" fn host_command(env: Env, info: CallbackInfo) -> Value {
+    boundary(env, || {
+        let ([mode, input], _) = arguments(env, info)?;
+        let mode = string(env, mode)?;
+        let input = string(env, input)?;
+        let output = match mode.as_str() {
+            "finalize-host" => crate::host::finalize_json(&input),
+            "host-comments" => crate::host::parse_comments_json(&input),
+            "parse-graphql" => crate::languages::graphql::bridge::parse_json(&input),
+            _ => return Err(format!("Unknown host command: {mode}")),
+        }
+        .map_err(|error| format!("{error:#}"))?;
+        js_string(env, &output)
     })
 }
 
@@ -478,6 +666,8 @@ unsafe extern "C" fn reset_timing(env: Env, info: CallbackInfo) -> Value {
         let state = unsafe { &*pointer };
         state.requests.set(0);
         state.processing_ms.set(0.0);
+        state.arguments_ms.set(0.0);
+        state.results_ms.set(0.0);
         undefined(env)
     })
 }
@@ -487,13 +677,14 @@ unsafe extern "C" fn reset_timing(env: Env, info: CallbackInfo) -> Value {
 /// # Safety
 /// Called only by Node's module loader with valid napi handles.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rlint_napi_register_module_v1(env: Env, exports: Value) -> Value {
+pub unsafe extern "C" fn lintrs_napi_register_module_v1(env: Env, exports: Value) -> Value {
     #[cfg(feature = "typed-native")]
     crate::native::install_runner();
     boundary(env, || {
         method(env, exports, c"createSession", create_session)?;
         method(env, exports, c"attachSession", attach_session)?;
         method(env, exports, c"nativeAbi", native_abi)?;
+        method(env, exports, c"hostCommand", host_command)?;
         Ok(exports)
     })
 }

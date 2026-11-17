@@ -1,4 +1,4 @@
-// Public `rlint/native` surface: author-facing helpers for native Rust rules.
+// Public `lintrs/native` surface: author-facing helpers for native Rust rules.
 export { nativePlugin } from "./plugin.mjs";
 export { NativeRuleTester } from "./tester.mjs";
 export { buildCrate, cacheRoot, packageCrate, platformKey } from "./build.mjs";

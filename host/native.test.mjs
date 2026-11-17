@@ -21,8 +21,8 @@ import { platformKey } from "./native/build.mjs";
 import { NativeRuleTester } from "./native/index.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const nativeBin = join(root, "target/rlint-native/bin/rlint");
-const nativeBinding = join(root, "target/rlint-native/lib/librlint.node");
+const nativeBin = join(root, "target/lintrs-native/bin/lintrs");
+const nativeBinding = join(root, "target/lintrs-native/lib/liblintrs.node");
 const fixtureCrate = join(root, "fixtures/native/demo-rules");
 const haveNative = existsSync(nativeBin) && existsSync(nativeBinding);
 // In CI the native build is produced by an earlier step; missing is a failure.
@@ -58,9 +58,9 @@ const sdk = haveNative ? tsrsSdk() : undefined;
 // A temp lint project: package.json + tsconfig + the repo's runtime deps
 // linked in, plus a generated eslint.config.mjs.
 function project(t, { config, files, crates } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "rlint-native-"));
+  const dir = mkdtempSync(join(tmpdir(), "lintrs-native-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const cache = mkdtempSync(join(tmpdir(), "rlint-cache-"));
+  const cache = mkdtempSync(join(tmpdir(), "lintrs-cache-"));
   t.after(() => rmSync(cache, { recursive: true, force: true }));
   mkdirSync(join(dir, "node_modules"), { recursive: true });
   for (const entry of [
@@ -116,10 +116,10 @@ function run(dir, cache, args, { restricted = false, env = {} } = {}) {
       ...(restricted
         ? { PATH: `${nodeDir}:/usr/bin:/bin`, HOME: process.env.HOME }
         : process.env),
-      RLINT_TSRS_SDK: sdk,
-      RLINT_IN_PROCESS_BINDING: nativeBinding,
-      RLINT_TYPED_NATIVE: "1",
-      RLINT_CACHE_DIR: cache,
+      LINTRS_TSRS_SDK: sdk,
+      LINTRS_IN_PROCESS_BINDING: nativeBinding,
+      LINTRS_TYPED_NATIVE: "1",
+      LINTRS_CACHE_DIR: cache,
       RUSTUP_TOOLCHAIN: "1.96.0",
       ...env,
     },
@@ -149,7 +149,7 @@ test("native rules", { skip: skipNative }, async t => {
               encoding: "utf8",
               env: {
                 ...process.env,
-                RLINT_CACHE_DIR: cache,
+                LINTRS_CACHE_DIR: cache,
                 RUSTUP_TOOLCHAIN: "1.96.0",
               },
             },
@@ -229,10 +229,35 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
   });
 
   await t.test(
+    "crate build selects the fingerprint rustc through rustup",
+    async t => {
+      const rustup = spawnSync("rustup", ["--version"], {
+        encoding: "utf8",
+      });
+      if (rustup.error !== undefined || rustup.status !== 0)
+        return t.skip("rustup is not installed");
+      const cache = mkdtempSync(join(tmpdir(), "lintrs-cache-"));
+      t.after(() => rmSync(cache, { recursive: true, force: true }));
+      const env = { ...process.env, LINTRS_CACHE_DIR: cache };
+      // Anywhere but this repo: no rust-toolchain.toml applies, so a default
+      // toolchain that predates the fingerprint would fail without rustup.
+      delete env.RUSTUP_TOOLCHAIN;
+      const result = spawnSync(
+        process.execPath,
+        [join(root, "host/native/build.mjs"), fixtureCrate],
+        { cwd: tmpdir(), env, encoding: "utf8", stdio: "pipe" },
+      );
+      if (result.status !== 0)
+        assert.match(result.stderr, /rustup toolchain install/u);
+      else assert.match(result.stdout, /\.(?:dylib|so)\b/u);
+    },
+  );
+
+  await t.test(
     "mixed JS + native rules; native-only files skip JS",
     async t => {
       const profile = join(
-        mkdtempSync(join(tmpdir(), "rlint-profile-")),
+        mkdtempSync(join(tmpdir(), "lintrs-profile-")),
         "profile.json",
       );
       const { dir, cache } = project(t, {
@@ -270,7 +295,7 @@ export default [{ files: ["**/*.ts"],
   );
 
   await t.test("native-only files are recorded with jsSkipped", async t => {
-    const profileDir = mkdtempSync(join(tmpdir(), "rlint-profile-"));
+    const profileDir = mkdtempSync(join(tmpdir(), "lintrs-profile-"));
     t.after(() => rmSync(profileDir, { recursive: true, force: true }));
     const profile = join(profileDir, "profile.json");
     const { dir, cache } = project(t, {
@@ -288,12 +313,12 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
       encoding: "utf8",
       env: {
         ...process.env,
-        RLINT_TSRS_SDK: sdk,
-        RLINT_IN_PROCESS_BINDING: nativeBinding,
-        RLINT_TYPED_NATIVE: "1",
-        RLINT_CACHE_DIR: cache,
+        LINTRS_TSRS_SDK: sdk,
+        LINTRS_IN_PROCESS_BINDING: nativeBinding,
+        LINTRS_TYPED_NATIVE: "1",
+        LINTRS_CACHE_DIR: cache,
         RUSTUP_TOOLCHAIN: "1.96.0",
-        RLINT_TYPE_PROFILE: profile,
+        LINTRS_TYPE_PROFILE: profile,
       },
     });
     assert.equal(result.status, 1, result.stderr);
@@ -415,7 +440,7 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
             encoding: "utf8",
             env: {
               ...process.env,
-              RLINT_CACHE_DIR: cache,
+              LINTRS_CACHE_DIR: cache,
               RUSTUP_TOOLCHAIN: "1.96.0",
             },
           },
@@ -424,7 +449,7 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
         const manifest = JSON.parse(
           readFileSync(join(pkg, "package.json"), "utf8"),
         );
-        manifest.rlint.abi = "rlint/0.0.0/tsrs-deadbeef/rustc-0.0.0/fake";
+        manifest.lintrs.abi = "lintrs/0.0.0/tsrs-deadbeef/rustc-0.0.0/fake";
         writeFileSync(join(pkg, "package.json"), JSON.stringify(manifest));
         return `import { nativePlugin } from ${JSON.stringify(
           `file://${join(root, "host/native/index.mjs")}`,
@@ -438,7 +463,7 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
     });
     const bad = run(dir, cache, ["-f", "json", "case.ts"]);
     assert.equal(bad.status, 2);
-    assert.match(bad.stderr, /was built for ABI|matching your rlint/u);
+    assert.match(bad.stderr, /was built for ABI|matching your lintrs/u);
 
     // Cache miss with no toolchain.
     const miss = run(dir, cache, ["-f", "json", "case.ts"], {
@@ -492,7 +517,7 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
     const require = createRequire(import.meta.url);
     const { ESLint } = require("eslint");
     const { nativePlugin } = await import("./native/index.mjs");
-    const dir = mkdtempSync(join(tmpdir(), "rlint-stub-"));
+    const dir = mkdtempSync(join(tmpdir(), "lintrs-stub-"));
     try {
       writeFileSync(join(dir, "case.ts"), "let value = 1;\n");
       const eslint = new ESLint({
@@ -504,7 +529,10 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
           rules: { "demo/x": "error" },
         },
       });
-      await assert.rejects(eslint.lintFiles(["case.ts"]), /native rlint rule/u);
+      await assert.rejects(
+        eslint.lintFiles(["case.ts"]),
+        /native lintrs rule/u,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -525,14 +553,14 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
         encoding: "utf8",
         env: {
           ...process.env,
-          RLINT_CACHE_DIR: cache,
+          LINTRS_CACHE_DIR: cache,
           RUSTUP_TOOLCHAIN: "1.96.0",
         },
       },
     );
     if (library.status !== 0) throw new Error(library.stderr);
     const out = session.request(
-      "rlintNativeProbe",
+      "lintrsNativeProbe",
       JSON.stringify({ libraries: [library.stdout.trim()] }),
     );
     const probe = JSON.parse(out);
@@ -573,9 +601,9 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
   });
 
   await t.test("npm workspace package resolves by crate", async t => {
-    const dir = mkdtempSync(join(tmpdir(), "rlint-native-ws-"));
+    const dir = mkdtempSync(join(tmpdir(), "lintrs-native-ws-"));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
-    const cache = mkdtempSync(join(tmpdir(), "rlint-cache-"));
+    const cache = mkdtempSync(join(tmpdir(), "lintrs-cache-"));
     t.after(() => rmSync(cache, { recursive: true, force: true }));
     const pkg = join(dir, "packages", "lint-rules");
     mkdirSync(join(pkg, "rust"), { recursive: true });
@@ -667,47 +695,44 @@ export default [{ files: ["**/*.ts"], plugins: { demo: rules },
     assert.equal(statSync(join(entry, "build.log")).mtimeMs, log);
   });
 
-  await t.test("workspace runner lints with a native plugin", async t => {
-    const { dir, cache } = project(t, {
-      crates: true,
-      files: {
-        "src/case.ts": 'let value = "x";\n',
-      },
-      config: ({ crateDir }) => `import { nativePlugin } from ${JSON.stringify(
-        `file://${join(root, "host/native/index.mjs")}`,
-      )};
+  await t.test(
+    "--concurrency produces identical Rust rule diagnostics",
+    async t => {
+      const { dir, cache } = project(t, {
+        crates: true,
+        files: {
+          "src/case.ts": 'let value = "x";\n',
+          "src/other.ts": 'let other = "y";\n',
+        },
+        config: ({
+          crateDir,
+        }) => `import { nativePlugin } from ${JSON.stringify(
+          `file://${join(root, "host/native/index.mjs")}`,
+        )};
 const demo = nativePlugin({ name: "demo", rules: ["value-is-string"], crate: ${JSON.stringify(crateDir)} });
 export default [{ files: ["**/*.ts"], plugins: { demo },
  languageOptions: { parserOptions: { projectService: true } },
  rules: { "demo/value-is-string": "error" } }];\n`,
-    });
-    // Warm the rule-crate cache so the restricted-PATH run below needs no
-    // Rust toolchain.
-    const warm = run(dir, cache, ["-f", "json", "src/case.ts"]);
-    assert.equal(warm.status, 1, warm.stderr);
-    const result = spawnSync(
-      process.execPath,
-      [join(root, "host/workspace.mjs"), "src/**/*.ts"],
-      {
-        cwd: dir,
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-        env: {
-          PATH: `${nodeDir}:/usr/bin:/bin`,
-          HOME: process.env.HOME,
-          RLINT_TSRS_SDK: sdk,
-          RLINT_CACHE_DIR: cache,
-          RUSTUP_TOOLCHAIN: "1.96.0",
-        },
-      },
-    );
-    assert.equal(result.status, 1, result.stderr);
-    assert.match(result.stdout, /demo\/value-is-string/u);
-    const report = JSON.parse(
-      readFileSync(join(dir, "eslint-output.json"), "utf8"),
-    );
-    assert.equal(report[0].messages[0].ruleId, "demo/value-is-string");
-  });
+      });
+      const serial = run(dir, cache, [
+        "-f",
+        "json",
+        "--concurrency",
+        "off",
+        "src",
+      ]);
+      assert.equal(serial.status, 1, serial.stderr);
+      const parallel = run(dir, cache, [
+        "-f",
+        "json",
+        "--concurrency",
+        "2",
+        "src",
+      ]);
+      assert.equal(parallel.status, 1, parallel.stderr);
+      assert.deepEqual(JSON.parse(parallel.stdout), JSON.parse(serial.stdout));
+    },
+  );
 
   await t.test(
     "rule crate with its own crates.io dependency builds and runs",
@@ -736,9 +761,9 @@ export default [{ files: ["**/*.ts"], plugins: { casing: demo },
   );
 
   await t.test(
-    "a crate depending on a crate rlint contains fails clearly",
+    "a crate depending on a crate lintrs contains fails clearly",
     async t => {
-      const dir = mkdtempSync(join(tmpdir(), "rlint-badcrate-"));
+      const dir = mkdtempSync(join(tmpdir(), "lintrs-badcrate-"));
       t.after(() => rmSync(dir, { recursive: true, force: true }));
       mkdirSync(join(dir, "src"), { recursive: true });
       cpSync(join(fixtureCrate, "src/lib.rs"), join(dir, "src/lib.rs"));
@@ -763,7 +788,7 @@ serde_json = "1"
           encoding: "utf8",
           env: {
             ...process.env,
-            RLINT_CACHE_DIR: mkdtempSync(join(tmpdir(), "rlint-cache-")),
+            LINTRS_CACHE_DIR: mkdtempSync(join(tmpdir(), "lintrs-cache-")),
             RUSTUP_TOOLCHAIN: "1.96.0",
           },
         },
@@ -771,9 +796,9 @@ serde_json = "1"
       assert.equal(built.status, 1);
       assert.match(
         built.stderr,
-        /cannot depend on crates rlint contains|depends on serde_json/u,
+        /cannot depend on crates lintrs contains|depends on serde_json/u,
       );
-      assert.match(built.stderr, /rlint::native::serde_json/u);
+      assert.match(built.stderr, /lintrs::native::serde_json/u);
     },
   );
 
@@ -782,10 +807,10 @@ serde_json = "1"
       plugin: `file://${join(root, "fixtures/native/demo-plugin.mjs")}`,
       binary: nativeBin,
       env: {
-        RLINT_TSRS_SDK: sdk,
-        RLINT_IN_PROCESS_BINDING: nativeBinding,
-        RLINT_TYPED_NATIVE: "1",
-        RLINT_CACHE_DIR: mkdtempSync(join(tmpdir(), "rlint-tester-cache-")),
+        LINTRS_TSRS_SDK: sdk,
+        LINTRS_IN_PROCESS_BINDING: nativeBinding,
+        LINTRS_TYPED_NATIVE: "1",
+        LINTRS_CACHE_DIR: mkdtempSync(join(tmpdir(), "lintrs-tester-cache-")),
         RUSTUP_TOOLCHAIN: "1.96.0",
       },
     });

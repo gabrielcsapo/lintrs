@@ -1,0 +1,18 @@
+{
+  "name": "lintrs-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/prepare-bench.mjs && rspress dev",
+    "build": "node scripts/prepare-bench.mjs && rspress build",
+    "preview": "rspress preview"
+  },
+  "dependencies": {
+    "@fontsource-variable/nunito": "^5.3.0",
+    "@rspress/core": "2.1.1",
+    "mermaid": "^12.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

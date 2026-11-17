@@ -46,6 +46,15 @@ unsafe extern "C" {
         buffer: *mut Value,
         offset: *mut usize,
     ) -> i32;
+    // Node-API 10 (Node >= 22.9; lintrs requires Node 24): creates the
+    // internalized string V8 uses for property names, so setting a property
+    // with it skips V8's per-assignment string-table lookup.
+    fn node_api_create_property_key_utf8(
+        env: Env,
+        data: *const c_char,
+        length: usize,
+        result: *mut Value,
+    ) -> i32;
 }
 
 // All Node calls below run on the owning environment's thread. Inputs are converted before acquiring
@@ -120,6 +129,10 @@ fn length(env: Env, value: Value) -> Result<u32, String> {
 struct Decoder {
     ancestors: Vec<Value>,
     remaining: usize,
+    /// `Object.prototype`, looked up on the first non-array object of a call
+    /// rather than once per object (each lookup reads the global and creates
+    /// two key strings).
+    plain: Option<Value>,
 }
 
 impl Decoder {
@@ -172,9 +185,16 @@ impl Decoder {
         let mut prototype = ptr::null_mut();
         checked(unsafe { napi_get_prototype(env, value, &mut prototype) })?;
         if kind(env, prototype)? != 1 {
-            let mut global = ptr::null_mut();
-            checked(unsafe { napi_get_global(env, &mut global) })?;
-            let plain = get(env, get(env, global, "Object")?, "prototype")?;
+            let plain = match self.plain {
+                Some(plain) => plain,
+                None => {
+                    let mut global = ptr::null_mut();
+                    checked(unsafe { napi_get_global(env, &mut global) })?;
+                    let plain = get(env, get(env, global, "Object")?, "prototype")?;
+                    self.plain = Some(plain);
+                    plain
+                }
+            };
             if !same(env, prototype, plain)? {
                 return Err("Typed queries require plain objects".to_owned());
             }
@@ -206,48 +226,86 @@ fn decode(env: Env, value: Value) -> Result<Json, String> {
     Decoder {
         ancestors: Vec::new(),
         remaining: 100_000,
+        plain: None,
     }
     .decode(env, value)
 }
 
-fn encode(env: Env, value: &Json) -> Result<Value, String> {
-    let mut result = ptr::null_mut();
-    match value {
-        Json::Null => checked(unsafe { napi_get_null(env, &mut result) })?,
-        Json::Bool(value) => checked(unsafe { napi_get_boolean(env, *value, &mut result) })?,
-        Json::Number(value) => checked(unsafe { napi_create_double(env, *value, &mut result) })?,
-        Json::Integer(value) => {
-            checked(unsafe { napi_create_double(env, *value as f64, &mut result) })?
+/// Builds a result's JS value. Responses are mostly arrays of same-shaped
+/// objects (types, symbols, nodes), so each distinct key is created once per
+/// result, as an internalized property key, and reused for every object.
+/// Handles stay valid for the whole callback: no handle scope closes inside.
+struct Encoder<'a> {
+    env: Env,
+    keys: HashMap<&'a str, Value>,
+}
+
+impl<'a> Encoder<'a> {
+    fn key(&mut self, key: &'a str) -> Result<Value, String> {
+        if let Some(handle) = self.keys.get(key) {
+            return Ok(*handle);
         }
-        Json::String(value) => return js_string(env, value),
-        Json::Array(values) => {
-            checked(unsafe { napi_create_array_with_length(env, values.len(), &mut result) })?;
-            for (index, value) in values.iter().enumerate() {
-                checked(unsafe {
-                    napi_set_element(
-                        env,
-                        result,
-                        u32::try_from(index).map_err(|_| "Output array too large")?,
-                        encode(env, value)?,
-                    )
-                })?;
-            }
-        }
-        Json::Object(fields) => {
-            checked(unsafe { napi_create_object(env, &mut result) })?;
-            for (key, value) in fields {
-                checked(unsafe {
-                    napi_set_property(env, result, js_string(env, key)?, encode(env, value)?)
-                })?;
-            }
-        }
+        let mut handle = ptr::null_mut();
+        // SAFETY: Node copies exactly key.len() bytes before returning.
+        checked(unsafe {
+            node_api_create_property_key_utf8(self.env, key.as_ptr().cast(), key.len(), &mut handle)
+        })?;
+        self.keys.insert(key, handle);
+        Ok(handle)
     }
-    Ok(result)
+
+    fn value(&mut self, value: &'a Json) -> Result<Value, String> {
+        let env = self.env;
+        let mut result = ptr::null_mut();
+        match value {
+            Json::Null => checked(unsafe { napi_get_null(env, &mut result) })?,
+            Json::Bool(value) => checked(unsafe { napi_get_boolean(env, *value, &mut result) })?,
+            Json::Number(value) => {
+                checked(unsafe { napi_create_double(env, *value, &mut result) })?
+            }
+            Json::Integer(value) => {
+                checked(unsafe { napi_create_double(env, *value as f64, &mut result) })?
+            }
+            Json::String(value) => return js_string(env, value),
+            Json::Array(values) => {
+                checked(unsafe { napi_create_array_with_length(env, values.len(), &mut result) })?;
+                for (index, value) in values.iter().enumerate() {
+                    let element = self.value(value)?;
+                    checked(unsafe {
+                        napi_set_element(
+                            env,
+                            result,
+                            u32::try_from(index).map_err(|_| "Output array too large")?,
+                            element,
+                        )
+                    })?;
+                }
+            }
+            Json::Object(fields) => {
+                checked(unsafe { napi_create_object(env, &mut result) })?;
+                for (key, value) in fields {
+                    let key = self.key(key)?;
+                    let value = self.value(value)?;
+                    checked(unsafe { napi_set_property(env, result, key, value) })?;
+                }
+            }
+        }
+        Ok(result)
+    }
+}
+
+fn encode(env: Env, value: &Json) -> Result<Value, String> {
+    Encoder {
+        env,
+        keys: HashMap::new(),
+    }
+    .value(value)
 }
 
 fn with_session(
     env: Env,
     this: Value,
+    entered: Instant,
     action: impl FnOnce(&Session) -> Result<Json, tsrs_api::ApiError>,
 ) -> Result<Value, String> {
     let pointer = session_pointer(env, this)?;
@@ -259,12 +317,21 @@ fn with_session(
         .clone()
         .ok_or("The in-process session is closed")?;
     let start = Instant::now();
-    let response = action(&session);
-    state.requests.set(state.requests.get() + 1);
     state
-        .processing_ms
-        .set(state.processing_ms.get() + start.elapsed().as_secs_f64() * 1000.0);
-    encode(env, &response.map_err(|error| error.to_string())?)
+        .arguments_ms
+        .set(state.arguments_ms.get() + (start - entered).as_secs_f64() * 1000.0);
+    let response = action(&session);
+    let encoding = Instant::now();
+    let elapsed = (encoding - start).as_secs_f64() * 1000.0;
+    state.requests.set(state.requests.get() + 1);
+    state.processing_ms.set(state.processing_ms.get() + elapsed);
+    publish_compute(env, state, elapsed);
+    let value = encode(env, &response.map_err(|error| error.to_string())?)?;
+    state
+        .results_ms
+        .set(state.results_ms.get() + encoding.elapsed().as_secs_f64() * 1000.0);
+    publish_native(env, state, entered);
+    Ok(value)
 }
 
 unsafe extern "C" fn typed_methods(env: Env, info: CallbackInfo) -> Value {
@@ -281,7 +348,7 @@ unsafe extern "C" fn typed_methods(env: Env, info: CallbackInfo) -> Value {
             env,
             &Json::Array(
                 session
-                    .rlint_typed_methods()
+                    .lintrs_typed_methods()
                     .into_iter()
                     .map(|name| Json::String(name.to_owned()))
                     .collect(),
@@ -292,6 +359,7 @@ unsafe extern "C" fn typed_methods(env: Env, info: CallbackInfo) -> Value {
 
 unsafe extern "C" fn request_value(env: Env, info: CallbackInfo) -> Value {
     boundary(env, || {
+        let entered = Instant::now();
         let ([method, params], this) = arguments(env, info)?;
         let method = strict_string(env, method)?;
         if kind(env, params)? != 6 {
@@ -301,8 +369,8 @@ unsafe extern "C" fn request_value(env: Env, info: CallbackInfo) -> Value {
         if !matches!(params, Json::Object(_)) {
             return Err("Typed query params must be a plain object".to_owned());
         }
-        with_session(env, this, |session| {
-            session.rlint_typed_query(&method, &params)
+        with_session(env, this, entered, |session| {
+            session.lintrs_typed_query(&method, &params)
         })
     })
 }
@@ -355,6 +423,7 @@ fn indices(env: Env, value: Value) -> Result<Vec<u32>, String> {
 
 unsafe extern "C" fn node_facts(env: Env, info: CallbackInfo) -> Value {
     boundary(env, || {
+        let entered = Instant::now();
         let ([snapshot, project, file, nodes, mask], this) = arguments(env, info)?;
         let snapshot = unsigned(env, snapshot, 9_007_199_254_740_991.0)?;
         let project = strict_string(env, project)?;
@@ -362,14 +431,15 @@ unsafe extern "C" fn node_facts(env: Env, info: CallbackInfo) -> Value {
         let nodes = indices(env, nodes)?;
         let mask = u32::try_from(unsigned(env, mask, f64::from(u32::MAX))?)
             .map_err(|error| error.to_string())?;
-        with_session(env, this, |session| {
-            session.rlint_node_facts(snapshot, &project, &file, &nodes, mask)
+        with_session(env, this, entered, |session| {
+            session.lintrs_node_facts(snapshot, &project, &file, &nodes, mask)
         })
     })
 }
 
 unsafe extern "C" fn object_property(env: Env, info: CallbackInfo) -> Value {
     boundary(env, || {
+        let entered = Instant::now();
         let ([snapshot, project, kind, handle, property], this) = arguments(env, info)?;
         let snapshot = unsigned(env, snapshot, 9_007_199_254_740_991.0)?;
         let project = strict_string(env, project)?;
@@ -377,9 +447,9 @@ unsafe extern "C" fn object_property(env: Env, info: CallbackInfo) -> Value {
         let handle = decode(env, handle)?;
         let property = strict_string(env, property)?;
         let mut missing = false;
-        let result = with_session(env, this, |session| {
+        let result = with_session(env, this, entered, |session| {
             session
-                .rlint_object_property(snapshot, &project, &kind, &handle, &property)
+                .lintrs_object_property(snapshot, &project, &kind, &handle, &property)
                 .map(|value| {
                     missing = value.is_none();
                     value.unwrap_or(Json::Null)
@@ -391,6 +461,7 @@ unsafe extern "C" fn object_property(env: Env, info: CallbackInfo) -> Value {
 
 unsafe extern "C" fn node_facts_planned(env: Env, info: CallbackInfo) -> Value {
     boundary(env, || {
+        let entered = Instant::now();
         let ([snapshot, project, file, nodes, mask, fields], this) = arguments(env, info)?;
         let snapshot = unsigned(env, snapshot, 9_007_199_254_740_991.0)?;
         let project = strict_string(env, project)?;
@@ -408,8 +479,8 @@ unsafe extern "C" fn node_facts_planned(env: Env, info: CallbackInfo) -> Value {
                 _ => Err("nodeFactsPlanned symbol fields must be strings".to_owned()),
             })
             .collect::<Result<Vec<_>, _>>()?;
-        with_session(env, this, |session| {
-            session.rlint_node_facts_planned(snapshot, &project, &file, &nodes, mask, &fields)
+        with_session(env, this, entered, |session| {
+            session.lintrs_node_facts_planned(snapshot, &project, &file, &nodes, mask, &fields)
         })
     })
 }

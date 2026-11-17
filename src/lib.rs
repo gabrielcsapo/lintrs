@@ -7,7 +7,7 @@ pub mod host;
 pub mod in_process;
 mod jsonc;
 pub mod native;
-/// tsrs types re-exported so rule libraries name them through `rlint::ts`.
+/// tsrs types re-exported so rule libraries name them through `lintrs::ts`.
 pub use native::ts;
 pub mod languages;
 pub mod output;

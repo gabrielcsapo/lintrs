@@ -1,11 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export function tsrsSdkRoot(root) {
-  if (process.env.RLINT_TSRS_SDK !== undefined)
-    return resolve(process.env.RLINT_TSRS_SDK);
+  if (process.env.LINTRS_TSRS_SDK !== undefined)
+    return resolve(process.env.LINTRS_TSRS_SDK);
   // Installed distributions ship the SDK next to host/ at <dist>/tsrs-sdk.
   const bundled = join(import.meta.dirname, "../../tsrs-sdk");
   if (existsSync(join(bundled, "package.json"))) return bundled;
@@ -27,7 +28,8 @@ export function tsrsSdkRoot(root) {
       "1",
     ],
     {
-      cwd: root,
+      // The pinned tsrs checkout belongs to this lintrs checkout, not the linted project.
+      cwd: resolve(import.meta.dirname, "../.."),
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,
     },
@@ -44,9 +46,29 @@ export function tsrsSdkRoot(root) {
   return resolve(dirname(dependency.manifest_path), "../../npm/tsrs");
 }
 
-export async function loadSdk(root) {
+// Node refuses to strip types from files under node_modules. When the SDK
+// comes from an installed npm package, stage its sources once per version
+// under the lintrs cache and load them from there.
+function sdkSource(root) {
   const source = join(tsrsSdkRoot(root), "src");
-  if (process.env.RLINT_IN_PROCESS_BINDING !== undefined) {
+  if (!source.split(sep).includes("node_modules")) return source;
+  const version = JSON.parse(
+    readFileSync(join(dirname(source), "package.json"), "utf8"),
+  ).version;
+  const staged = join(
+    process.env.LINTRS_CACHE_DIR ?? join(homedir(), ".cache", "lintrs"),
+    `tsrs-sdk-${version}`,
+  );
+  if (!existsSync(join(staged, "src/api/sync/api.ts"))) {
+    mkdirSync(staged, { recursive: true });
+    cpSync(dirname(source), staged, { recursive: true });
+  }
+  return join(staged, "src");
+}
+
+export async function loadSdk(root) {
+  const source = sdkSource(root);
+  if (process.env.LINTRS_IN_PROCESS_BINDING !== undefined) {
     const { installInProcessClient } = await import("../in-process.mjs");
     installInProcessClient(source);
   }

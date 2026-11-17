@@ -1,6 +1,7 @@
 import { realpathSync, writeFileSync } from "node:fs";
 
 import { createAccessPlans } from "./access-plans.mjs";
+import { profiler } from "./profile.mjs";
 import { compatibility } from "./type-services/adapter.mjs";
 import { nodeMaps } from "./type-services/node-maps.mjs";
 import { projectForFile } from "./type-services/project.mjs";
@@ -41,41 +42,89 @@ export async function createTypeServices({ configs, files, root }) {
     );
   };
   if (![...projects.values()].some(Boolean)) return untyped;
-  if (process.env.RLINT_BINARY === undefined)
+  if (process.env.LINTRS_BINARY === undefined)
     throw new Error("The Rust type server binary is missing");
   const sdk = await loadSdk(root);
-  const lazyObjects = process.env.RLINT_LAZY_OBJECTS === "1";
-  const contextualBatch = process.env.RLINT_CONTEXTUAL_BATCH === "1";
-  const compactDeclarations = process.env.RLINT_COMPACT_DECLARATIONS === "1";
-  const fusedSymbols = process.env.RLINT_FUSED_SYMBOLS === "1";
+  const lazyObjects = process.env.LINTRS_LAZY_OBJECTS === "1";
+  const contextualBatch = process.env.LINTRS_CONTEXTUAL_BATCH === "1";
+  const compactDeclarations = process.env.LINTRS_COMPACT_DECLARATIONS === "1";
+  const fusedSymbols = process.env.LINTRS_FUSED_SYMBOLS === "1";
   if (
     (compactDeclarations || fusedSymbols) &&
-    (process.env.RLINT_TYPED_NATIVE !== "1" || lazyObjects)
+    (process.env.LINTRS_TYPED_NATIVE !== "1" || lazyObjects)
   )
     throw new Error(
       "Compact declaration and fused symbol access require the eager typed native binding",
     );
   if (
     contextualBatch &&
-    (process.env.RLINT_TYPED_NATIVE !== "1" ||
-      process.env.RLINT_TRUE_BULK !== "1")
+    (process.env.LINTRS_TYPED_NATIVE !== "1" ||
+      process.env.LINTRS_TRUE_BULK !== "1")
   )
     throw new Error("Contextual type batching requires the typed bulk binding");
-  const adaptive = process.env.RLINT_ADAPTIVE_FACTS === "1";
+  const adaptive = process.env.LINTRS_ADAPTIVE_FACTS === "1";
   if (adaptive && !lazyObjects)
     throw new Error("Adaptive node facts require lazy objects");
   const plans = adaptive ? createAccessPlans() : undefined;
-  if (lazyObjects && process.env.RLINT_TYPED_NATIVE !== "1")
+  if (lazyObjects && process.env.LINTRS_TYPED_NATIVE !== "1")
     throw new Error("Lazy objects require the typed native binding");
-  const profilePath = process.env.RLINT_TYPE_PROFILE;
+  const profilePath = process.env.LINTRS_TYPE_PROFILE;
   const projectTimings = [];
   const lazyStats = [];
   const symbolStats = [];
   const api = new sdk.api.API({
-    tsserverPath: process.env.RLINT_BINARY,
+    tsserverPath: process.env.LINTRS_BINARY,
     cwd: root,
     collectTiming: profilePath !== undefined,
   });
+  const profile = profiler();
+  if (profile !== undefined) {
+    // Every checker round trip goes through these client methods, for both
+    // the in-process binding and the child-process transport. Wrapping the
+    // instance bills each call to the rule (or phase) that made it.
+    for (const name of [
+      "request",
+      "apiRequest",
+      "apiRequestBinary",
+      "batchRequests",
+      "direct",
+      "nodeFacts",
+      "objectProperty",
+    ]) {
+      const method = api.client[name];
+      if (typeof method !== "function") continue;
+      api.client[name] = function (first, ...rest) {
+        const label =
+          typeof first === "string" && name !== "nodeFacts" ? first : name;
+        return profile.charge("checker", label, () =>
+          method.call(this, first, ...rest),
+        );
+      };
+    }
+  }
+  // In-process sessions publish Rust's compute time into this buffer after
+  // each request (see src/in_process.rs), splitting checker calls into Rust
+  // work and the JS/Rust crossing. The child-process transport has none.
+  const session = api.client.session;
+  if (profile !== undefined && typeof session?.profileClock === "function") {
+    // [0] compute, [1] requests, [2] whole native callback (older bindings
+    // leave it at zero, which only drops the conversion split).
+    const clock = new Float64Array(3);
+    session.profileClock(clock);
+    profile.setComputeClock(
+      () => clock[0],
+      () => clock[2],
+    );
+  }
+  const profiledMap = map => {
+    if (profile === undefined) return map;
+    const wrapped = { ...map };
+    for (const name of ["get", "has"])
+      if (typeof map[name] === "function")
+        wrapped[name] = (...args) =>
+          profile.charge("nodeMaps", name, () => map[name](...args));
+    return wrapped;
+  };
   const snapshots = new Map();
   const remaining = new Map();
   for (const project of projects.values()) {
@@ -85,7 +134,14 @@ export async function createTypeServices({ configs, files, root }) {
   const nativeRuns = [];
   const ensureEntry = projectPath => {
     let entry = snapshots.get(projectPath);
-    if (entry === undefined) {
+    if (entry === undefined && profile !== undefined)
+      return profile.phase("Project build", () => createEntry(projectPath));
+    if (entry === undefined) entry = createEntry(projectPath);
+    return entry;
+  };
+  const createEntry = projectPath => {
+    let entry;
+    {
       const start = performance.now();
       const config = api.readConfigFile(projectPath);
       if (config.error !== undefined)
@@ -128,7 +184,7 @@ export async function createTypeServices({ configs, files, root }) {
           sdk,
           project,
           (source, targets) =>
-            api.client.apiRequest("rlintIsTypeAssignableToMany", {
+            api.client.apiRequest("lintrsIsTypeAssignableToMany", {
               snapshot: snapshot.id,
               project: project.id,
               source: source.id,
@@ -173,7 +229,7 @@ export async function createTypeServices({ configs, files, root }) {
           contextualBatch
             ? nodes =>
                 api.client
-                  .apiRequest("rlintGetContextualTypes", {
+                  .apiRequest("lintrsGetContextualTypes", {
                     snapshot: snapshot.id,
                     project: project.id,
                     locations: nodes.map(node => node.id),
@@ -188,7 +244,7 @@ export async function createTypeServices({ configs, files, root }) {
             ? {
                 compact: compactDeclarations,
                 locations: nodes =>
-                  api.client.apiRequest("rlintGetSymbolFacts", {
+                  api.client.apiRequest("lintrsGetSymbolFacts", {
                     snapshot: snapshot.id,
                     project: project.id,
                     locations: nodes.map(node => node.id),
@@ -196,7 +252,7 @@ export async function createTypeServices({ configs, files, root }) {
                     includeDeclarations: compactDeclarations,
                   }),
                 alias: symbol =>
-                  api.client.apiRequest("rlintGetAliasedSymbolFacts", {
+                  api.client.apiRequest("lintrsGetAliasedSymbolFacts", {
                     snapshot: snapshot.id,
                     project: project.id,
                     symbol: symbol.reference,
@@ -219,7 +275,12 @@ export async function createTypeServices({ configs, files, root }) {
       throw new Error(`File is outside its tsrs project: ${file}`);
     if (rawFile.text.replace(/^\uFEFF/u, "") !== sourceCode.text)
       throw new Error(`Rust type snapshot differs from linted source: ${file}`);
-    const maps = nodeMaps(sourceCode, rawFile, entry.adapter, sdk);
+    const built = nodeMaps(sourceCode, rawFile, entry.adapter, sdk);
+    const maps = {
+      ...built,
+      esTreeNodeToTSNodeMap: profiledMap(built.esTreeNodeToTSNodeMap),
+      tsNodeToESTreeNodeMap: profiledMap(built.tsNodeToESTreeNodeMap),
+    };
     return {
       ...maps,
       program: entry.adapter.program,
@@ -279,20 +340,20 @@ export async function createTypeServices({ configs, files, root }) {
       throw new Error(
         `Native rules require ${file} to be included in a tsconfig project`,
       );
-    if (api.client.nativeMethods?.has("rlintRunNativeRules") !== true)
+    if (api.client.nativeMethods?.has("lintrsRunNativeRules") !== true)
       throw new Error(
         "Native rules require the in-process binding " +
-          "(RLINT_IN_PROCESS_BINDING) built with the typed-native feature",
+          "(LINTRS_IN_PROCESS_BINDING) built with the typed-native feature",
       );
     const entry = ensureEntry(projectPath);
-    if (process.env.RLINT_NATIVE_DEBUG === "1")
+    if (process.env.LINTRS_NATIVE_DEBUG === "1")
       console.error("runNative", {
         projectPath,
         file,
         names: entry.project.program.getSourceFileNames?.(),
       });
     const start = performance.now();
-    const diagnostics = api.client.apiRequest("rlintRunNativeRules", {
+    const diagnostics = api.client.apiRequest("lintrsRunNativeRules", {
       snapshot: entry.snapshot.id,
       project: entry.project.id,
       file,
@@ -308,6 +369,11 @@ export async function createTypeServices({ configs, files, root }) {
     return diagnostics;
   };
   services.close = () => {
+    if (
+      profile !== undefined &&
+      typeof session?.nativeRuleTiming === "function"
+    )
+      profile.addNative(JSON.parse(session.nativeRuleTiming()));
     try {
       if (profilePath !== undefined)
         writeFileSync(
@@ -316,6 +382,12 @@ export async function createTypeServices({ configs, files, root }) {
             {
               projects: projectTimings,
               api: api.getTimingInfo(),
+              // The in-process binding's own totals, including the split of
+              // typed calls into argument decoding and result encoding, which
+              // the SDK's combined timing does not carry.
+              ...(typeof session?.timing === "function"
+                ? { binding: JSON.parse(session.timing()).totals }
+                : {}),
               ...(api.client.nativeStats === undefined
                 ? {}
                 : { native: api.client.nativeStats }),

@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const enabled = process.env.RLINT_TYPED_NATIVE === "1";
+const enabled = process.env.LINTRS_TYPED_NATIVE === "1";
 const binding = enabled
-  ? createRequire(import.meta.url)(process.env.RLINT_IN_PROCESS_BINDING)
+  ? createRequire(import.meta.url)(process.env.LINTRS_IN_PROCESS_BINDING)
   : undefined;
 
 function fixture(
@@ -15,7 +15,7 @@ function fixture(
   source = "export const value: string = 'hello';\n",
   additionalFiles = {},
 ) {
-  const directory = mkdtempSync(join(tmpdir(), "rlint-typed-native-"));
+  const directory = mkdtempSync(join(tmpdir(), "lintrs-typed-native-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const file = join(directory, "sample.ts");
   writeFileSync(file, source);
@@ -86,7 +86,7 @@ test(
     });
     assert.equal(aliased.name, "target");
     const call = overrides =>
-      session.requestValue("rlintGetSymbolFacts", {
+      session.requestValue("lintrsGetSymbolFacts", {
         ...context,
         locations,
         ...overrides,
@@ -102,7 +102,7 @@ test(
       { symbol: expected[1] },
       { symbol: null },
     ]);
-    const aliasFacts = session.requestValue("rlintGetAliasedSymbolFacts", {
+    const aliasFacts = session.requestValue("lintrsGetAliasedSymbolFacts", {
       ...context,
       symbol: alias.reference,
     });
@@ -116,7 +116,7 @@ test(
       declarations: [],
     });
     assert.deepEqual(
-      session.requestValue("rlintGetAliasedSymbolFacts", {
+      session.requestValue("lintrsGetAliasedSymbolFacts", {
         ...context,
         symbol: alias.reference,
         includeDeclarations: false,
@@ -198,7 +198,7 @@ test(
       { ...alias.reference, id: 9_007_199_254_740_991 },
     ])
       assert.throws(() =>
-        session.requestValue("rlintGetAliasedSymbolFacts", {
+        session.requestValue("lintrsGetAliasedSymbolFacts", {
           ...context,
           symbol,
         }),
@@ -217,20 +217,20 @@ test(
     };
     assert.throws(() => call(foreignContext));
     assert.throws(() =>
-      session.requestValue("rlintGetAliasedSymbolFacts", {
+      session.requestValue("lintrsGetAliasedSymbolFacts", {
         ...foreignContext,
         symbol: alias.reference,
       }),
     );
     assert.throws(() =>
-      session.requestValue("rlintGetAliasedSymbolFacts", {
+      session.requestValue("lintrsGetAliasedSymbolFacts", {
         ...context,
         symbol: alias.reference,
         unknown: true,
       }),
     );
     assert.throws(() =>
-      session.requestValue("rlintGetAliasedSymbolFacts", {
+      session.requestValue("lintrsGetAliasedSymbolFacts", {
         ...context,
         symbol: alias.reference,
         includeDeclarations: "yes",
@@ -240,7 +240,7 @@ test(
     request("release", { snapshot: context.snapshot });
     assert.throws(() => call());
     assert.throws(() =>
-      session.requestValue("rlintGetAliasedSymbolFacts", {
+      session.requestValue("lintrsGetAliasedSymbolFacts", {
         ...context,
         symbol: alias.reference,
       }),
@@ -291,9 +291,9 @@ test(
     );
     assert.notEqual(expected[0], null);
     assert.equal(expected[1], null);
-    assert.ok(session.typedMethods().includes("rlintGetContextualTypes"));
+    assert.ok(session.typedMethods().includes("lintrsGetContextualTypes"));
     const batch = overrides =>
-      session.requestValue("rlintGetContextualTypes", {
+      session.requestValue("lintrsGetContextualTypes", {
         ...context,
         locations,
         ...overrides,
@@ -341,7 +341,7 @@ test(
   t => {
     const { session, request, context } = fixture(t);
     assert.ok(session.typedMethods().includes("getStringType"));
-    assert.ok(session.typedMethods().includes("rlintIsTypeAssignableToMany"));
+    assert.ok(session.typedMethods().includes("lintrsIsTypeAssignableToMany"));
     assert.equal(session.typedMethods().includes("createSnapshot"), false);
     assert.equal(session.typedMethods().includes("typeToTypeNode"), false);
     const string = session.requestValue("getStringType", context);
@@ -354,37 +354,37 @@ test(
       targets: [string.id, number.id],
     };
     assert.deepEqual(
-      session.requestValue("rlintIsTypeAssignableToMany", batch),
+      session.requestValue("lintrsIsTypeAssignableToMany", batch),
       [true, false],
     );
     assert.throws(() =>
-      session.requestValue("rlintIsTypeAssignableToMany", {
+      session.requestValue("lintrsIsTypeAssignableToMany", {
         ...batch,
         source: 4_294_967_295,
       }),
     );
     assert.throws(() =>
-      session.requestValue("rlintIsTypeAssignableToMany", {
+      session.requestValue("lintrsIsTypeAssignableToMany", {
         ...batch,
         targets: [4_294_967_295],
       }),
     );
     assert.throws(() =>
-      session.requestValue("rlintIsTypeAssignableToMany", {
+      session.requestValue("lintrsIsTypeAssignableToMany", {
         ...batch,
         targets: Array(65).fill(string.id),
       }),
     );
     assert.throws(
       () =>
-        session.requestValue("rlintIsTypeAssignableToMany", {
+        session.requestValue("lintrsIsTypeAssignableToMany", {
           ...batch,
           unknown: true,
         }),
       /Unknown/u,
     );
     assert.deepEqual(
-      session.requestValue("rlintIsTypeAssignableToMany", batch),
+      session.requestValue("lintrsIsTypeAssignableToMany", batch),
       [true, false],
     );
     assert.throws(

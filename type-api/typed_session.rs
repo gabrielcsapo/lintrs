@@ -1,21 +1,21 @@
 impl Session {
-    pub fn rlint_typed_methods(&self) -> Vec<&'static str> {
-        crate::checker::rlint_typed_methods()
+    pub fn lintrs_typed_methods(&self) -> Vec<&'static str> {
+        crate::checker::lintrs_typed_methods()
     }
 
-    pub fn rlint_typed_query(&self, method: &str, params: &Value) -> ApiResult<Value> {
+    pub fn lintrs_typed_query(&self, method: &str, params: &Value) -> ApiResult<Value> {
         if *self.closed.lock().unwrap() {
             return Err(ApiError::client("session is closed"));
         }
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::checker::rlint_handle_value(self, method, params)
+            crate::checker::lintrs_handle_value(self, method, params)
         })) {
             Ok(result) => result,
             Err(_) => Err(ApiError::internal("panic in typed checker query")),
         }
     }
 
-    pub fn rlint_node_facts(
+    pub fn lintrs_node_facts(
         &self,
         snapshot: u64,
         project: &str,
@@ -27,14 +27,14 @@ impl Session {
             return Err(ApiError::client("session is closed"));
         }
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::checker::rlint_node_facts(self, snapshot, project, file, indices, mask)
+            crate::checker::lintrs_node_facts(self, snapshot, project, file, indices, mask)
         })) {
             Ok(result) => result,
             Err(_) => Err(ApiError::internal("panic in native node facts")),
         }
     }
 
-    pub fn rlint_node_facts_planned(
+    pub fn lintrs_node_facts_planned(
         &self,
         snapshot: u64,
         project: &str,
@@ -47,7 +47,7 @@ impl Session {
             return Err(ApiError::client("session is closed"));
         }
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::checker::rlint_node_facts_planned(
+            crate::checker::lintrs_node_facts_planned(
                 self,
                 snapshot,
                 project,
@@ -62,7 +62,7 @@ impl Session {
         }
     }
 
-    pub fn rlint_object_property(
+    pub fn lintrs_object_property(
         &self,
         snapshot: u64,
         project: &str,
@@ -74,7 +74,7 @@ impl Session {
             return Err(ApiError::client("session is closed"));
         }
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::checker::rlint_object_property(self, snapshot, project, kind, handle, property)
+            crate::checker::lintrs_object_property(self, snapshot, project, kind, handle, property)
         })) {
             Ok(result) => result,
             Err(_) => Err(ApiError::internal("panic in native object property")),

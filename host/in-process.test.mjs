@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const bindingPath = process.env.RLINT_IN_PROCESS_BINDING;
+const bindingPath = process.env.LINTRS_IN_PROCESS_BINDING;
 const binding =
   bindingPath === undefined
     ? undefined
@@ -24,7 +24,7 @@ test(
       );
       assert.throws(() => session.request("readConfigFile", "{"));
       assert.throws(
-        () => session.request("unimplementedRlintMethod", "null"),
+        () => session.request("unimplementedLintrsMethod", "null"),
         /unknown API method/u,
       );
       const initialized = JSON.parse(session.request("initialize", "null"));
@@ -45,7 +45,7 @@ test(
   "in-process sessions perform real Rust type comparisons and release snapshot handles",
   { skip: binding === undefined },
   t => {
-    const directory = mkdtempSync(join(tmpdir(), "rlint-native-binding-"));
+    const directory = mkdtempSync(join(tmpdir(), "lintrs-native-binding-"));
     t.after(() => rmSync(directory, { recursive: true, force: true }));
     const file = join(directory, "sample.ts");
     writeFileSync(file, "export const value: string = 'hello';\n");
@@ -84,7 +84,7 @@ test(
       false,
     );
     assert.deepEqual(
-      request("rlintIsTypeAssignableToMany", {
+      request("lintrsIsTypeAssignableToMany", {
         ...context,
         source: string.id,
         targets: [string.id, number.id],
@@ -97,10 +97,10 @@ test(
       { source: string.id, targets: Array(65).fill(number.id) },
     ])
       assert.throws(() =>
-        request("rlintIsTypeAssignableToMany", { ...context, ...invalid }),
+        request("lintrsIsTypeAssignableToMany", { ...context, ...invalid }),
       );
     assert.deepEqual(
-      request("rlintIsTypeAssignableToMany", {
+      request("lintrsIsTypeAssignableToMany", {
         ...context,
         source: string.id,
         targets: [string.id, number.id],
@@ -116,7 +116,7 @@ test(
     request("release", { snapshot: created.snapshot });
     assert.throws(() => request("getStringType", context));
     assert.throws(() =>
-      request("rlintIsTypeAssignableToMany", {
+      request("lintrsIsTypeAssignableToMany", {
         ...context,
         source: string.id,
         targets: [number.id],

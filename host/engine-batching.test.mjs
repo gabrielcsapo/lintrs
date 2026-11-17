@@ -40,17 +40,18 @@ test("batched location queries retain identities, missing symbols, and file isol
     "export const value0: string = 'different';\nmissing;\n",
   );
   const profile = join(f.dir, "type-profile.json");
-  const actual = run(f, [second], { RLINT_TYPE_PROFILE: profile });
+  const actual = run(f, [second], { LINTRS_TYPE_PROFILE: profile });
   assert.equal(actual.status, 1, actual.stderr);
   const timing = JSON.parse(readFileSync(profile, "utf8"));
-  if (process.env.RLINT_LAZY_OBJECTS === "1") {
+  if (process.env.LINTRS_LAZY_OBJECTS === "1") {
     const facts =
-      timing.native.rlintNodeFacts + (timing.native.rlintNodeFactsPlanned ?? 0);
-    if (process.env.RLINT_LAZY_PREFETCH === "1") assert.ok(facts < 606);
+      timing.native.lintrsNodeFacts +
+      (timing.native.lintrsNodeFactsPlanned ?? 0);
+    if (process.env.LINTRS_LAZY_PREFETCH === "1") assert.ok(facts < 606);
     else assert.equal(facts, 606);
-    if (process.env.RLINT_ADAPTIVE_FACTS === "1")
-      assert.ok(timing.native["rlintProperty:symbol:name"] <= 301);
-    else assert.equal(timing.native["rlintProperty:symbol:name"], 301);
+    if (process.env.LINTRS_ADAPTIVE_FACTS === "1")
+      assert.ok(timing.native["lintrsProperty:symbol:name"] <= 301);
+    else assert.equal(timing.native["lintrsProperty:symbol:name"], 301);
   } else {
     assert.ok(timing.api.totals.requestCount < 100, JSON.stringify(timing));
   }
@@ -65,7 +66,7 @@ test("batched location queries retain identities, missing symbols, and file isol
 test(
   "lazy handles preserve identities without loading unread symbol properties",
   {
-    skip: process.env.RLINT_LAZY_OBJECTS !== "1",
+    skip: process.env.LINTRS_LAZY_OBJECTS !== "1",
   },
   async t => {
     const f = fixture(t, {
@@ -93,7 +94,7 @@ test(
     }}}}, rules: {'probe/lazy': 'error'}}`,
     });
     const profile = join(f.dir, "lazy-profile.json");
-    const actual = run(f, [], { RLINT_TYPE_PROFILE: profile });
+    const actual = run(f, [], { LINTRS_TYPE_PROFILE: profile });
     assert.equal(actual.status, 1, actual.stderr);
     assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
     const timing = JSON.parse(readFileSync(profile, "utf8"));
@@ -102,8 +103,8 @@ test(
         project => project.properties === 0 && project.hydrations === 0,
       ),
     );
-    if (process.env.RLINT_LAZY_PREFETCH !== "1") {
-      assert.equal(timing.native.rlintNodeFacts, 2);
+    if (process.env.LINTRS_LAZY_PREFETCH !== "1") {
+      assert.equal(timing.native.lintrsNodeFacts, 2);
       assert.equal(timing.lazy[0].symbols, 1);
     }
   },
@@ -112,7 +113,7 @@ test(
 test(
   "learned rule plans fuse later files and preserve fresh declarations and fallback fields",
   {
-    skip: process.env.RLINT_ADAPTIVE_FACTS !== "1",
+    skip: process.env.LINTRS_ADAPTIVE_FACTS !== "1",
   },
   async t => {
     const source = prefix =>
@@ -143,7 +144,7 @@ test(
     writeFileSync(second, source("second"));
     writeFileSync(third, source("third"));
     const profile = join(f.dir, "plan-profile.json");
-    const actual = run(f, [second, third], { RLINT_TYPE_PROFILE: profile });
+    const actual = run(f, [second, third], { LINTRS_TYPE_PROFILE: profile });
     assert.equal(actual.status, 1, actual.stderr);
     const eslint = new ESLint({ cwd: f.dir, overrideConfigFile: f.config });
     const expected = await eslint.lintFiles([f.file, second, third]);
@@ -157,7 +158,7 @@ test(
       JSON.stringify(timing.accessPlans),
     );
     assert.ok(timing.accessPlans.usedFields > 0);
-    assert.ok(timing.native["rlintProperty:symbol:valueDeclaration"] > 0);
+    assert.ok(timing.native["lintrsProperty:symbol:valueDeclaration"] > 0);
   },
 );
 
@@ -209,7 +210,7 @@ declare const enumTarget: Choice;
     }}}}, rules: {'probe/assignments': 'error'}}`,
   });
   const profile = join(f.dir, "type-profile.json");
-  const actual = run(f, [], { RLINT_TYPE_PROFILE: profile });
+  const actual = run(f, [], { LINTRS_TYPE_PROFILE: profile });
   assert.equal(actual.status, 1, actual.stderr);
   const expected = await oracle(f);
   assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
@@ -243,11 +244,11 @@ test("memoized checker queries preserve optional arguments and missing answers",
     }}}}, rules: {'probe/memo': 'error'}}`,
   });
   const profile = join(f.dir, "memo-profile.json");
-  const actual = run(f, [], { RLINT_TYPE_PROFILE: profile });
+  const actual = run(f, [], { LINTRS_TYPE_PROFILE: profile });
   assert.equal(actual.status, 1, actual.stderr);
   assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
   const timing = JSON.parse(readFileSync(profile, "utf8"));
-  if (process.env.RLINT_TYPED_NATIVE === "1") {
+  if (process.env.LINTRS_TYPED_NATIVE === "1") {
     assert.equal(timing.native.typeToString, 3);
     assert.equal(timing.native.getPropertyOfType, 1);
   }
@@ -281,15 +282,15 @@ test("contextual type batches preserve shared identities and missing answers", a
     }}}}, rules: {'probe/context': 'error'}}`,
   });
   const profile = join(f.dir, "context-profile.json");
-  const actual = run(f, [], { RLINT_TYPE_PROFILE: profile });
+  const actual = run(f, [], { LINTRS_TYPE_PROFILE: profile });
   assert.equal(actual.status, 1, actual.stderr);
   assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
   if (
-    process.env.RLINT_CONTEXTUAL_BATCH === "1" &&
-    process.env.RLINT_LAZY_OBJECTS !== "1"
+    process.env.LINTRS_CONTEXTUAL_BATCH === "1" &&
+    process.env.LINTRS_LAZY_OBJECTS !== "1"
   ) {
     const timing = JSON.parse(readFileSync(profile, "utf8"));
-    assert.equal(timing.native.rlintGetContextualTypes, 1);
+    assert.equal(timing.native.lintrsGetContextualTypes, 1);
     assert.equal(timing.native.getContextualType, undefined);
   }
 });

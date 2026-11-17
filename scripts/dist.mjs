@@ -18,7 +18,7 @@ if (values.build === undefined)
   throw new Error("Specify --build <prepared native build directory>");
 const build = resolve(values.build);
 const marker = JSON.parse(
-  readFileSync(join(build, "rlint-build.json"), "utf8"),
+  readFileSync(join(build, "lintrs-build.json"), "utf8"),
 );
 if (marker.root !== root)
   throw new Error(`${build} was not prepared from this repository`);
@@ -38,17 +38,17 @@ function command(executable, args, options = {}) {
 const target = /^host: (.+)$/mu.exec(command("rustc", ["-vV"]))?.[1];
 if (target === undefined) throw new Error("Cannot determine Rust host target");
 
-// The dist ships the assembled native layout: bin/rlint plus lib/ holding
-// the rlint dylib, the .node binding wrapper and the shared libstd. The
+// The dist ships the assembled native layout: bin/lintrs plus lib/ holding
+// the lintrs dylib, the .node binding wrapper and the shared libstd. The
 // sdk/ tree (metadata for compiling rule crates from source) is published as
 // a separate tarball — runtime users with prebuilt rules never need it.
-const native = join(root, "target/rlint-native");
+const native = join(root, "target/lintrs-native");
 const libraryName =
-  process.platform === "darwin" ? "librlint.dylib" : "librlint.so";
+  process.platform === "darwin" ? "liblintrs.dylib" : "liblintrs.so";
 for (const artifact of [
-  join(native, "bin/rlint"),
+  join(native, "bin/lintrs"),
   join(native, "lib", libraryName),
-  join(native, "lib/librlint.node"),
+  join(native, "lib/liblintrs.node"),
   join(native, "sdk/deps"),
 ])
   if (!existsSync(artifact))
@@ -82,11 +82,11 @@ if (!existsSync(join(sdk, "package.json")))
   throw new Error(`The tsrs SDK is missing at ${sdk}`);
 
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-const name = `rlint-${manifest.version}-${target}`;
+const name = `lintrs-${manifest.version}-${target}`;
 const staging = join(root, "dist", name);
 rmSync(staging, { recursive: true, force: true });
 mkdirSync(join(staging, "bin"), { recursive: true });
-cpSync(join(native, "bin/rlint"), join(staging, "bin/rlint"));
+cpSync(join(native, "bin/lintrs"), join(staging, "bin/lintrs"));
 cpSync(join(native, "lib"), join(staging, "lib"), { recursive: true });
 for (const file of [
   "package.json",
@@ -130,7 +130,7 @@ command("tar", ["-czf", tarball, "-C", dirname(staging), name]);
 
 // The rule-crate SDK ships separately: extracting the sdk tarball into the
 // unpacked distribution's root restores <prefix>/sdk.
-const sdkName = `rlint-sdk-${manifest.version}-${target}`;
+const sdkName = `lintrs-sdk-${manifest.version}-${target}`;
 const sdkTarball = join(root, "dist", `${sdkName}.tar.gz`);
 rmSync(sdkTarball, { force: true });
 command("tar", ["-czf", sdkTarball, "-C", native, "sdk"]);

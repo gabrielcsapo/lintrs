@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Builds the native layout in target/rlint-native/:
-//   bin/rlint            — the CLI (statically linked libstd)
-//   lib/librlint.{dylib,so} — the rlint+tsrs dylib native rules link against
+// Builds the native layout in target/lintrs-native/:
+//   bin/lintrs            — the CLI (statically linked libstd)
+//   lib/liblintrs.{dylib,so} — the lintrs+tsrs dylib native rules link against
 //   lib/libstd-*.{dylib,so} — the shared Rust standard library it NEEDs
-//   lib/librlint.node    — thin Node-API wrapper; the in-process binding
+//   lib/liblintrs.node    — thin Node-API wrapper; the in-process binding
 //   sdk/deps/*.rlib      — metadata for compiling rule crates via
-//                          --extern rlint=<lib>/librlint.* -L dependency=<sdk>/deps
+//                          --extern lintrs=<lib>/liblintrs.* -L dependency=<sdk>/deps
 // Usage: node scripts/build-native.mjs [--build <prepared dir>] [--out <dir>]
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -30,11 +30,11 @@ const option = name => {
 };
 // prepare.mjs requires its output outside the repository.
 const buildDir = resolve(
-  option("--build") ?? join(tmpdir(), "rlint-native-build"),
+  option("--build") ?? join(tmpdir(), "lintrs-native-build"),
 );
-const outDir = resolve(option("--out") ?? join(root, "target/rlint-native"));
+const outDir = resolve(option("--out") ?? join(root, "target/lintrs-native"));
 const darwin = process.platform === "darwin";
-const libraryName = darwin ? "librlint.dylib" : "librlint.so";
+const libraryName = darwin ? "liblintrs.dylib" : "liblintrs.so";
 const stdPattern = darwin ? /^libstd-.*\.dylib$/u : /^libstd-.*\.so$/u;
 
 function run(command, commandArgs, options = {}) {
@@ -47,7 +47,7 @@ function run(command, commandArgs, options = {}) {
     throw new Error(`${command} ${commandArgs.join(" ")} failed`);
 }
 
-// prepare.mjs is idempotent: it refreshes the rlint sources and the injected
+// prepare.mjs is idempotent: it refreshes the lintrs sources and the injected
 // tsrs_api, so always run it to keep the prepared tree current.
 console.log(`[build-native] preparing ${buildDir}`);
 run(
@@ -59,7 +59,7 @@ run(
 const manifest = join(buildDir, "Cargo.toml");
 // The CLI binary keeps a statically linked standard library; only the dylib
 // half links libstd dynamically so rule libraries share everything.
-console.log("[build-native] cargo build --release -p rlint (binary)");
+console.log("[build-native] cargo build --release -p lintrs (binary)");
 run(
   "cargo",
   [
@@ -69,9 +69,9 @@ run(
     "--manifest-path",
     manifest,
     "-p",
-    "rlint",
+    "lintrs",
     "--bin",
-    "rlint",
+    "lintrs",
   ],
   { cwd: root },
 );
@@ -82,7 +82,7 @@ const rustflags = darwin
   ? `${preferDynamic} -C link-args=-Wl,-undefined,dynamic_lookup`
   : preferDynamic;
 console.log(
-  "[build-native] cargo build --release -p rlint -p rlint-node (prefer-dynamic)",
+  "[build-native] cargo build --release -p lintrs -p lintrs-node (prefer-dynamic)",
 );
 run(
   "cargo",
@@ -93,9 +93,9 @@ run(
     "--manifest-path",
     manifest,
     "-p",
-    "rlint",
+    "lintrs",
     "-p",
-    "rlint-node",
+    "lintrs-node",
     "--lib",
   ],
   {
@@ -115,7 +115,7 @@ const deps = join(nativeRelease, "deps");
 const dylib = join(nativeRelease, libraryName);
 const wrapper = join(
   nativeRelease,
-  darwin ? "librlint_node.dylib" : "librlint_node.so",
+  darwin ? "liblintrs_node.dylib" : "liblintrs_node.so",
 );
 for (const artifact of [dylib, wrapper])
   if (!existsSync(artifact)) throw new Error(`Missing ${artifact}`);
@@ -146,6 +146,11 @@ if (darwin) {
     execFileSync("install_name_tool", ["-add_rpath", "@loader_path", dylib]);
 } else {
   execFileSync("patchelf", ["--set-soname", libraryName, dylib]);
+  // Both need $ORIGIN, like @loader_path on macOS: liblintrs.so is what
+  // NEEDs the shared libstd staged beside it, and a RUNPATH applies only to
+  // the object's own dependencies (it is not inherited from the wrapper,
+  // which, linked --as-needed, does not NEED libstd itself).
+  execFileSync("patchelf", ["--set-rpath", "$ORIGIN", dylib]);
   execFileSync("patchelf", ["--set-rpath", "$ORIGIN", wrapper]);
 }
 
@@ -173,13 +178,13 @@ rmSync(outDir, { recursive: true, force: true });
 mkdirSync(join(outDir, "bin"), { recursive: true });
 mkdirSync(join(outDir, "lib"), { recursive: true });
 mkdirSync(join(outDir, "sdk/deps"), { recursive: true });
-cpSync(join(release, "rlint"), join(outDir, "bin/rlint"));
+cpSync(join(release, "lintrs"), join(outDir, "bin/lintrs"));
 cpSync(dylib, join(outDir, "lib", libraryName));
 cpSync(stdSource, join(outDir, "lib", std));
-cpSync(wrapper, join(outDir, "lib/librlint.node"));
+cpSync(wrapper, join(outDir, "lib/liblintrs.node"));
 
 // What rustc needs when compiling a rule crate: .rlib artifacts (metadata +
-// fallback objects) for rlint's dependency crates — each is handed to rustc
+// fallback objects) for lintrs's dependency crates — each is handed to rustc
 // via --extern so types match the facade — plus proc-macro dylibs (serde_derive
 // and friends are loaded at compile time).
 let copied = 0;
@@ -191,10 +196,10 @@ for (const entry of readdirSync(deps)) {
   )
     continue;
   if (
-    entry.startsWith("librlint-") ||
-    entry.startsWith("librlint_node-") ||
+    entry.startsWith("liblintrs-") ||
+    entry.startsWith("liblintrs_node-") ||
     entry === libraryName ||
-    entry === `librlint_node.${libraryName.split(".")[1]}`
+    entry === `liblintrs_node.${libraryName.split(".")[1]}`
   )
     continue;
   cpSync(join(deps, entry), join(outDir, "sdk/deps", entry));
@@ -207,15 +212,15 @@ const dirSize = path =>
 const report = {
   out: outDir,
   files: {
-    "bin/rlint": size(join(outDir, "bin/rlint")),
+    "bin/lintrs": size(join(outDir, "bin/lintrs")),
     [`lib/${libraryName}`]: size(join(outDir, "lib", libraryName)),
-    "lib/librlint.node": size(join(outDir, "lib/librlint.node")),
+    "lib/liblintrs.node": size(join(outDir, "lib/liblintrs.node")),
     [`lib/${std}`]: size(join(outDir, "lib", std)),
     "sdk/deps": { files: copied, bytes: dirSize(join(outDir, "sdk/deps")) },
   },
 };
 writeFileSync(
-  join(outDir, "rlint-native.json"),
+  join(outDir, "lintrs-native.json"),
   JSON.stringify(report, null, 2) + "\n",
 );
 console.log(JSON.stringify(report, null, 2));

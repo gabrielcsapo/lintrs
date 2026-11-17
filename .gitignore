@@ -7,3 +7,8 @@ host/.workspace-*
 eslint-output.json
 lint-timing.json
 dist/
+docs/node_modules/
+docs/doc_build/
+docs/docs/public/bench/
+bench/.work/
+examples/rules/**/Cargo.lock

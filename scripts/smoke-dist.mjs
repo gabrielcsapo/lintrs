@@ -15,8 +15,8 @@ const dist = resolve(process.argv[2] ?? "");
 const platformKey =
   `${process.platform}-${process.arch}` +
   (process.platform === "linux" ? "-gnu" : "");
-const binary = join(dist, "bin/rlint");
-const project = mkdtempSync(join(tmpdir(), "rlint-dist-smoke-"));
+const binary = join(dist, "bin/lintrs");
+const project = mkdtempSync(join(tmpdir(), "lintrs-dist-smoke-"));
 try {
   writeFileSync(join(project, "package.json"), '{"type":"commonjs"}\n');
   // The smoke project stands in for a user's project, which brings its own
@@ -161,12 +161,12 @@ export default [{ files: ['**/*.ts'], plugins: { demo },
       [join(dist, "host/native/build.mjs"), fixture],
       {
         encoding: "utf8",
-        env: { ...process.env, RLINT_NATIVE_HOME: dist },
+        env: { ...process.env, LINTRS_NATIVE_HOME: dist },
       },
     );
-    if (noSdk.status === 0 || !noSdk.stderr.includes("rlint-sdk-")) {
+    if (noSdk.status === 0 || !noSdk.stderr.includes("lintrs-sdk-")) {
       process.stderr.write(
-        `expected a missing-sdk error naming rlint-sdk-*, got ` +
+        `expected a missing-sdk error naming lintrs-sdk-*, got ` +
           `status ${noSdk.status}\n${noSdk.stderr}\n`,
       );
       process.exitCode = 1;
@@ -177,7 +177,7 @@ export default [{ files: ['**/*.ts'], plugins: { demo },
     }
   }
 
-  // Leg 2 (sdk): with rlint-sdk-<version>-<target>.tar.gz extracted next to
+  // Leg 2 (sdk): with lintrs-sdk-<version>-<target>.tar.gz extracted next to
   // the runtime prefix, source builds work again.
   const sdkTarball = process.argv[3];
   if (sdkTarball !== undefined) {
@@ -193,7 +193,7 @@ export default [{ files: ['**/*.ts'], plugins: { demo },
         [join(dist, "host/native/build.mjs"), fixture],
         {
           encoding: "utf8",
-          env: { ...process.env, RLINT_NATIVE_HOME: dist },
+          env: { ...process.env, LINTRS_NATIVE_HOME: dist },
         },
       );
       if (sourceBuild.status !== 0 || !existsSync(sourceBuild.stdout.trim())) {

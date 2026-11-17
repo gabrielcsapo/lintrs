@@ -1,12 +1,12 @@
 impl Setup<'_> {
-    pub(crate) fn rlint_type_handle(&self, ty: P<Type>) -> CheckerResult<Value> {
+    pub(crate) fn lintrs_type_handle(&self, ty: P<Type>) -> CheckerResult<Value> {
         let mut out = Obj::new();
         out.num("id", self.register_type(ty)? as f64);
         out.num("flags", ty.flags().bits() as f64);
         Ok(out.build())
     }
 
-    pub(crate) fn rlint_symbol_handle(&self, symbol: P<Symbol>) -> CheckerResult<Value> {
+    pub(crate) fn lintrs_symbol_handle(&self, symbol: P<Symbol>) -> CheckerResult<Value> {
         let mut reference = Obj::new();
         if let Some(file) = symbol_owner_file(symbol) {
             reference.num("kind", SYMBOL_OWNER_KIND_FILE as f64);
@@ -29,7 +29,7 @@ impl Setup<'_> {
         Ok(out.build())
     }
 
-    pub(crate) fn rlint_type_property(
+    pub(crate) fn lintrs_type_property(
         &mut self,
         ty: P<Type>,
         property: &str,
@@ -44,7 +44,7 @@ impl Setup<'_> {
                 ty.alias().and_then(|alias| alias.symbol())
             };
             return symbol
-                .map(|symbol| self.rlint_symbol_handle(symbol))
+                .map(|symbol| self.lintrs_symbol_handle(symbol))
                 .transpose();
         }
         if property == "objectFlags" {
@@ -79,7 +79,7 @@ impl Setup<'_> {
         Ok(None)
     }
 
-    pub(crate) fn rlint_symbol_property(
+    pub(crate) fn lintrs_symbol_property(
         &self,
         symbol: P<Symbol>,
         property: &str,
@@ -101,15 +101,15 @@ impl Setup<'_> {
                 None => return Ok(None),
             },
             "parent" => match symbol.parent() {
-                Some(parent) => self.rlint_symbol_handle(parent)?,
+                Some(parent) => self.lintrs_symbol_handle(parent)?,
                 None => return Ok(None),
             },
             "exportSymbol" => match symbol.export_symbol() {
-                Some(export) => self.rlint_symbol_handle(export)?,
+                Some(export) => self.lintrs_symbol_handle(export)?,
                 None => return Ok(None),
             },
             "reference" => {
-                let Value::Object(fields) = self.rlint_symbol_handle(symbol)? else {
+                let Value::Object(fields) = self.lintrs_symbol_handle(symbol)? else {
                     return Ok(None);
                 };
                 return Ok(fields.get("reference").cloned());

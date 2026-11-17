@@ -58,7 +58,7 @@ test("reusable workers preserve per-project types, options, and fixes", async t 
       maxBuffer: 16 * 1024 * 1024,
       env: {
         ...process.env,
-        RLINT_BINARY: binary,
+        LINTRS_BINARY: binary,
         NODE_OPTIONS: `--import=${pathToFileURL(first.guard).href}`,
       },
     },

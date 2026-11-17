@@ -154,12 +154,19 @@ pub fn parse(text: &str) -> anyhow::Result<Value> {
     Ok(json!({ "nodes": nodes, "tokens": tokens }))
 }
 
+/// `--parse-graphql`: a JSON array of documents on stdin, their parse on stdout.
 pub fn run() -> anyhow::Result<()> {
-    let documents: Vec<String> = serde_json::from_reader(std::io::stdin().lock())?;
+    let input = std::io::read_to_string(std::io::stdin().lock())?;
+    print!("{}", parse_json(&input)?);
+    Ok(())
+}
+
+/// The `--parse-graphql` transform as a function, for the in-process binding.
+pub fn parse_json(input: &str) -> anyhow::Result<String> {
+    let documents: Vec<String> = serde_json::from_str(input)?;
     let parsed = documents
         .iter()
         .map(|text| parse(text))
         .collect::<anyhow::Result<Vec<_>>>()?;
-    serde_json::to_writer(std::io::stdout().lock(), &parsed)?;
-    Ok(())
+    Ok(serde_json::to_string(&parsed)?)
 }

@@ -1,17 +1,22 @@
 import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const libraryName =
-  process.platform === "darwin" ? "librlint.dylib" : "librlint.so";
+  process.platform === "darwin" ? "liblintrs.dylib" : "liblintrs.so";
 
 // The assembled native layout: { bin, lib } produced by
 // scripts/build-native.mjs (a dist ships lib/ next to host/; the sdk ships
 // separately — see sdkDeps()).
 export function nativeHome() {
   const candidates = [
-    process.env.RLINT_NATIVE_HOME,
-    resolve(import.meta.dirname, "../../target/rlint-native"),
+    process.env.LINTRS_NATIVE_HOME,
+    // npm layout: the launcher points LINTRS_IN_PROCESS_BINDING at
+    // <platform-package>/lib/liblintrs.node.
+    process.env.LINTRS_IN_PROCESS_BINDING !== undefined
+      ? dirname(dirname(process.env.LINTRS_IN_PROCESS_BINDING))
+      : undefined,
+    resolve(import.meta.dirname, "../../target/lintrs-native"),
     resolve(import.meta.dirname, "../.."), // dist: host/../lib
   ];
   for (const candidate of candidates) {
@@ -22,8 +27,8 @@ export function nativeHome() {
       return candidate;
   }
   throw new Error(
-    "The rlint native layout is missing; run npm run build:native " +
-      "(or set RLINT_NATIVE_HOME to a directory containing lib/)",
+    "The lintrs native layout is missing; run npm run build:native " +
+      "(or set LINTRS_NATIVE_HOME to a directory containing lib/)",
   );
 }
 
@@ -36,7 +41,7 @@ function targetName() {
   return `${process.platform}-${process.arch}${suffix}`;
 }
 
-function rlintVersion() {
+function lintrsVersion() {
   for (const manifest of [
     join(nativeHome(), "package.json"),
     resolve(import.meta.dirname, "../../package.json"),
@@ -49,21 +54,21 @@ function rlintVersion() {
 }
 
 // The rule-crate SDK (sdk/deps) ships as a separate tarball; resolve it via
-// RLINT_SDK_DIR, then <prefix>/sdk next to lib/, then the dev layout.
+// LINTRS_SDK_DIR, then <prefix>/sdk next to lib/, then the dev layout.
 export function sdkDeps() {
   const candidates = [
-    process.env.RLINT_SDK_DIR && join(process.env.RLINT_SDK_DIR, "deps"),
+    process.env.LINTRS_SDK_DIR && join(process.env.LINTRS_SDK_DIR, "deps"),
     join(nativeHome(), "sdk", "deps"),
-    resolve(import.meta.dirname, "../../target/rlint-native/sdk/deps"),
+    resolve(import.meta.dirname, "../../target/lintrs-native/sdk/deps"),
   ];
   for (const candidate of candidates)
     if (candidate !== undefined && existsSync(candidate)) return candidate;
-  const artifact = `rlint-sdk-${rlintVersion()}-${targetName()}.tar.gz`;
+  const artifact = `lintrs-sdk-${lintrsVersion()}-${targetName()}.tar.gz`;
   throw new Error(
-    `Compiling rule crates from source needs the rlint SDK, which is not ` +
+    `Compiling rule crates from source needs the lintrs SDK, which is not ` +
       `installed next to ${nativeLibrary()}. Download ${artifact} for this ` +
-      `rlint and extract it into ${join(nativeHome(), "sdk")} ` +
-      `(or set RLINT_SDK_DIR), or use a prebuilt rule package`,
+      `lintrs and extract it into ${join(nativeHome(), "sdk")} ` +
+      `(or set LINTRS_SDK_DIR), or use a prebuilt rule package`,
   );
 }
 
@@ -72,7 +77,7 @@ export function nativeDeps() {
 }
 
 export function nativeBinding() {
-  return join(nativeHome(), "lib", "librlint.node");
+  return join(nativeHome(), "lib", "liblintrs.node");
 }
 
 // The ABI fingerprint this binding was built with; rule libraries and

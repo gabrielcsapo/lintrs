@@ -1,4 +1,4 @@
-pub(crate) fn rlint_typed_methods() -> Vec<&'static str> {
+pub(crate) fn lintrs_typed_methods() -> Vec<&'static str> {
     dispatch::CHECKER_METHODS
         .iter()
         .copied()
@@ -9,21 +9,21 @@ pub(crate) fn rlint_typed_methods() -> Vec<&'static str> {
             )
         })
         .chain([
-            "rlintIsTypeAssignableToMany",
-            "rlintGetContextualTypes",
-            "rlintGetSymbolFacts",
-            "rlintGetAliasedSymbolFacts",
-            "rlintRunNativeRules",
+            "lintrsIsTypeAssignableToMany",
+            "lintrsGetContextualTypes",
+            "lintrsGetSymbolFacts",
+            "lintrsGetAliasedSymbolFacts",
+            "lintrsRunNativeRules",
         ])
         .collect()
 }
 
-pub(crate) fn rlint_handle_value(
+pub(crate) fn lintrs_handle_value(
     session: &Session,
     method: &str,
     params: &Value,
 ) -> ApiResult<Value> {
-    if method == "rlintRunNativeRules" {
+    if method == "lintrsRunNativeRules" {
         let Value::Object(fields) = params else {
             return Err(ApiError::invalid_request(
                 "Native rules params must be an object",
@@ -36,15 +36,15 @@ pub(crate) fn rlint_handle_value(
         }
         let host = SessionHost { session };
         let params = params::Params::new(params, method).map_err(to_api_error)?;
-        return rlint_run_native_rules(&host, &params).map_err(to_api_error);
+        return lintrs_run_native_rules(&host, &params).map_err(to_api_error);
     }
-    if matches!(method, "rlintGetSymbolFacts" | "rlintGetAliasedSymbolFacts") {
+    if matches!(method, "lintrsGetSymbolFacts" | "lintrsGetAliasedSymbolFacts") {
         let Value::Object(fields) = params else {
             return Err(ApiError::invalid_request(
                 "Symbol fact params must be an object",
             ));
         };
-        let locations = method == "rlintGetSymbolFacts";
+        let locations = method == "lintrsGetSymbolFacts";
         if fields.keys().any(|key| {
             !matches!(key.as_str(), "snapshot" | "project" | "includeDeclarations")
                 && !(locations && matches!(key.as_str(), "locations" | "resolveAliases"))
@@ -60,13 +60,13 @@ pub(crate) fn rlint_handle_value(
         let host = SessionHost { session };
         let params = params::Params::new(params, method).map_err(to_api_error)?;
         return if locations {
-            handlers_symbols::rlint_get_symbol_facts(&host, &params)
+            handlers_symbols::lintrs_get_symbol_facts(&host, &params)
         } else {
-            handlers_symbols::rlint_get_aliased_symbol_facts(&host, &params)
+            handlers_symbols::lintrs_get_aliased_symbol_facts(&host, &params)
         }
         .map_err(to_api_error);
     }
-    if method == "rlintGetContextualTypes" {
+    if method == "lintrsGetContextualTypes" {
         let Value::Object(fields) = params else {
             return Err(ApiError::invalid_request(
                 "Contextual type batch params must be an object",
@@ -87,14 +87,14 @@ pub(crate) fn rlint_handle_value(
         }
         let host = SessionHost { session };
         let params = params::Params::new(params, method).map_err(to_api_error)?;
-        return handlers_types::rlint_get_contextual_types(&host, &params).map_err(to_api_error);
+        return handlers_types::lintrs_get_contextual_types(&host, &params).map_err(to_api_error);
     }
     if matches!(method, "typeToTypeNode" | "signatureToSignatureDeclaration")
-        || (method != "rlintIsTypeAssignableToMany" && !dispatch::is_checker_method(method))
+        || (method != "lintrsIsTypeAssignableToMany" && !dispatch::is_checker_method(method))
     {
         return Err(ApiError::unsupported(method));
     }
-    let method = if method == "rlintIsTypeAssignableToMany" {
+    let method = if method == "lintrsIsTypeAssignableToMany" {
         let Value::Object(fields) = params else {
             return Err(ApiError::invalid_request(
                 "Assignability params must be an object",
@@ -108,7 +108,7 @@ pub(crate) fn rlint_handle_value(
                 "Unknown assignability batch field",
             ));
         }
-        "rlintIsTypeAssignableToManyNative"
+        "lintrsIsTypeAssignableToManyNative"
     } else {
         method
     };
@@ -122,7 +122,7 @@ pub(crate) fn rlint_handle_value(
     }
 }
 
-pub(crate) fn rlint_node_facts(
+pub(crate) fn lintrs_node_facts(
     session: &Session,
     snapshot: u64,
     project: &str,
@@ -130,10 +130,10 @@ pub(crate) fn rlint_node_facts(
     indices: &[u32],
     mask: u32,
 ) -> ApiResult<Value> {
-    rlint_node_facts_core(session, snapshot, project, file_path, indices, mask, None)
+    lintrs_node_facts_core(session, snapshot, project, file_path, indices, mask, None)
 }
 
-pub(crate) fn rlint_node_facts_planned(
+pub(crate) fn lintrs_node_facts_planned(
     session: &Session,
     snapshot: u64,
     project: &str,
@@ -154,7 +154,7 @@ pub(crate) fn rlint_node_facts_planned(
             "nodeFactsPlanned requires at most four unique safe symbol fields",
         ));
     }
-    rlint_node_facts_core(
+    lintrs_node_facts_core(
         session,
         snapshot,
         project,
@@ -165,7 +165,7 @@ pub(crate) fn rlint_node_facts_planned(
     )
 }
 
-fn rlint_node_facts_core(
+fn lintrs_node_facts_core(
     session: &Session,
     snapshot: u64,
     project: &str,
@@ -198,7 +198,7 @@ fn rlint_node_facts_core(
         let mut values = Vec::with_capacity(nodes.len());
         for node in &nodes {
             let ty = setup.c().get_type_at_location(*node);
-            values.push(setup.rlint_type_handle(ty).map_err(to_api_error)?);
+            values.push(setup.lintrs_type_handle(ty).map_err(to_api_error)?);
         }
         out = out.set("types", Value::Array(values));
     }
@@ -210,12 +210,12 @@ fn rlint_node_facts_core(
                 values.push(Value::Null);
                 continue;
             };
-            let mut handle = setup.rlint_symbol_handle(symbol).map_err(to_api_error)?;
+            let mut handle = setup.lintrs_symbol_handle(symbol).map_err(to_api_error)?;
             if let Some(fields) = symbol_fields {
                 let mut properties = crate::wire::Obj::new();
                 for field in fields {
                     if let Some(value) = setup
-                        .rlint_symbol_property(symbol, field)
+                        .lintrs_symbol_property(symbol, field)
                         .map_err(to_api_error)?
                     {
                         properties = properties.set(field, value);
@@ -237,7 +237,7 @@ fn rlint_node_facts_core(
                 .c()
                 .get_contextual_type_exported(*node, tsrs_checker::ContextFlags::None);
             values.push(
-                ty.map_or(Ok(Value::Null), |ty| setup.rlint_type_handle(ty))
+                ty.map_or(Ok(Value::Null), |ty| setup.lintrs_type_handle(ty))
                     .map_err(to_api_error)?,
             );
         }
@@ -246,7 +246,7 @@ fn rlint_node_facts_core(
     Ok(out.build())
 }
 
-pub(crate) fn rlint_object_property(
+pub(crate) fn lintrs_object_property(
     session: &Session,
     snapshot: u64,
     project: &str,
@@ -266,7 +266,7 @@ pub(crate) fn rlint_object_property(
                 .resolve_type(params.u32("id").map_err(to_api_error)?)
                 .map_err(to_api_error)?;
             setup
-                .rlint_type_property(ty, property)
+                .lintrs_type_property(ty, property)
                 .map_err(to_api_error)
         }
         "symbol" => {
@@ -277,19 +277,19 @@ pub(crate) fn rlint_object_property(
                 .resolve_symbol(&params.symbol_ref("symbol").map_err(to_api_error)?)
                 .map_err(to_api_error)?;
             setup
-                .rlint_symbol_property(symbol, property)
+                .lintrs_symbol_property(symbol, property)
                 .map_err(to_api_error)
         }
         _ => Err(ApiError::invalid_request("Unknown native object kind")),
     }
 }
 
-pub(crate) fn rlint_run_native_rules(
+pub(crate) fn lintrs_run_native_rules(
     host: &dyn CheckerHost,
     p: &params::Params,
 ) -> CheckerResult<Value> {
     use crate::native_rules::{
-        RlintNativeCall, RlintNativeRuleSpec, native_rules_runner,
+        LintrsNativeCall, LintrsNativeRuleSpec, native_rules_runner,
     };
     let libraries: Vec<String> = p
         .string_array("libraries")?
@@ -307,7 +307,7 @@ pub(crate) fn rlint_run_native_rules(
                     let Some(Value::String(id)) = fields.get("id") else {
                         return Err(CheckerError::invalid("rule id must be a string"));
                     };
-                    Ok(RlintNativeRuleSpec {
+                    Ok(LintrsNativeRuleSpec {
                         name: name.clone(),
                         id: id.clone(),
                         options: fields.get("options").cloned().unwrap_or(Value::Null),
@@ -330,7 +330,7 @@ pub(crate) fn rlint_run_native_rules(
     let runner = native_rules_runner()
         .ok_or_else(|| CheckerError::client("the native rules runner is not registered"))?;
     let program = s.program;
-    let mut call = RlintNativeCall {
+    let mut call = LintrsNativeCall {
         checker: s.c(),
         program,
         source_file,

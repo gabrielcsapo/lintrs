@@ -1,6 +1,6 @@
 [package]
-name = "rlint-node"
-version = "0.1.0"
+name = "lintrs-node"
+version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -9,4 +9,4 @@ publish.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-rlint = { path = "..", features = ["typed-native"] }
+lintrs = { path = "..", features = ["typed-native"] }

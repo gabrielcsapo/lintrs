@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { buildCrate, platformKey } from "./build.mjs";
 import { nativeAbi } from "./home.mjs";
 
-// meta.rlint → the rule library on disk. Prebuilt packages are resolved
+// meta.lintrs → the rule library on disk. Prebuilt packages are resolved
 // through Node resolution from the plugin's root; otherwise the crate is
 // built (and cached) from source.
 export function resolveNativeLibrary(meta) {
@@ -25,16 +25,16 @@ export function resolveNativeLibrary(meta) {
         );
       }
       const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-      const { library, abi } = manifest.rlint ?? {};
+      const { library, abi } = manifest.lintrs ?? {};
       if (library === undefined)
         throw new Error(
-          `${packageName} has no "rlint".library entry in its package.json`,
+          `${packageName} has no "lintrs".library entry in its package.json`,
         );
       const expected = nativeAbi();
       if (abi !== expected)
         throw new Error(
-          `${packageName} was built for ABI "${abi}" but this rlint is ` +
-            `"${expected}"; install the rule package matching your rlint version`,
+          `${packageName} was built for ABI "${abi}" but this lintrs is ` +
+            `"${expected}"; install the rule package matching your lintrs version`,
         );
       const path = join(manifestPath, "..", library);
       if (!existsSync(path))

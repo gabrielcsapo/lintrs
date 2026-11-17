@@ -19,7 +19,7 @@ const output = resolve(values.output);
 const outputRelative = relative(root, output);
 if (outputRelative !== ".." && !outputRelative.startsWith("../"))
   throw new Error("The native build directory must be outside the repository");
-const marker = join(output, "rlint-build.json");
+const marker = join(output, "lintrs-build.json");
 if (existsSync(output)) {
   if (
     !existsSync(marker) ||
@@ -98,12 +98,12 @@ let dispatch = readFileSync(dispatchPath, "utf8");
 dispatch = replaceOnce(
   dispatch,
   '        "getSymbolAtPosition" =>',
-  '        "rlintIsTypeAssignableToManyNative" => ty::rlint_is_type_assignable_to_many(h, p),\n        "getSymbolAtPosition" =>',
+  '        "lintrsIsTypeAssignableToManyNative" => ty::lintrs_is_type_assignable_to_many(h, p),\n        "getSymbolAtPosition" =>',
 );
 dispatch = replaceOnce(
   dispatch,
   "pub const CHECKER_METHODS: &[&str] = &[",
-  'pub const CHECKER_METHODS: &[&str] = &[\n    "rlintIsTypeAssignableToManyNative",',
+  'pub const CHECKER_METHODS: &[&str] = &[\n    "lintrsIsTypeAssignableToManyNative",',
 );
 writeFileSync(dispatchPath, dispatch);
 const methodsPath = join(temporaryApi, "src/methods.rs");
@@ -112,16 +112,16 @@ methods = replaceOnce(
   methods,
   "pub fn method_info(name: &str) -> Option<&'static MethodInfo> {",
   `pub fn method_info(name: &str) -> Option<&'static MethodInfo> {
-    if name == "rlintIsTypeAssignableToManyNative" {
-        return Some(&MethodInfo { name: "rlintIsTypeAssignableToManyNative", owner: Owner::Checker, status: Status::Partial });
+    if name == "lintrsIsTypeAssignableToManyNative" {
+        return Some(&MethodInfo { name: "lintrsIsTypeAssignableToManyNative", owner: Owner::Checker, status: Status::Partial });
     }`,
 );
 methods = replaceOnce(
   methods,
   "pub fn params_type(method: &str) -> Option<&'static str> {",
   `pub fn params_type(method: &str) -> Option<&'static str> {
-    if method == "rlintIsTypeAssignableToManyNative" {
-        return Some("RlintAssignabilityBatchParams");
+    if method == "lintrsIsTypeAssignableToManyNative" {
+        return Some("LintrsAssignabilityBatchParams");
     }`,
 );
 writeFileSync(methodsPath, methods);
@@ -291,7 +291,7 @@ writeFileSync(setupPath, setup);
 
 const crate = output;
 cpSync(join(root, "src"), join(crate, "src"), { recursive: true });
-cpSync(join(root, "rlint-node"), join(crate, "rlint-node"), {
+cpSync(join(root, "lintrs-node"), join(crate, "lintrs-node"), {
   recursive: true,
 });
 cpSync(join(root, "build.rs"), join(crate, "build.rs"));
@@ -311,14 +311,14 @@ writeFileSync(join(output, "Cargo.toml"), manifest);
 cpSync(join(root, "Cargo.lock"), join(output, "Cargo.lock"));
 cpSync(join(root, ".cargo"), join(output, ".cargo"), { recursive: true });
 writeFileSync(
-  join(output, "rlint-build.json"),
+  join(output, "lintrs-build.json"),
   JSON.stringify(
     {
       root,
       revision,
       patchedDependency: "tsrs_api",
       addedPackages: [],
-      handler: "rlintIsTypeAssignableToManyNative",
+      handler: "lintrsIsTypeAssignableToManyNative",
     },
     null,
     2,
@@ -336,7 +336,7 @@ process.stdout.write(
       "--manifest-path",
       join(output, "Cargo.toml"),
       "-p",
-      "rlint",
+      "lintrs",
       "--features",
       "typed-native",
     ],

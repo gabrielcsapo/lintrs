@@ -1,11 +1,11 @@
 #[derive(Default)]
-struct RlintDeclarationHeaders {
+struct LintrsDeclarationHeaders {
     headers: Vec<Value>,
     seen: rustc_hash::FxHashSet<String>,
     position_maps: rustc_hash::FxHashMap<usize, std::sync::Arc<tsrs_api_codec::PositionMap>>,
 }
 
-impl RlintDeclarationHeaders {
+impl LintrsDeclarationHeaders {
     fn append(&mut self, setup: &Setup<'_>, symbol: P<Symbol>) -> CheckerResult<()> {
         for node in symbol
             .declarations()
@@ -53,7 +53,7 @@ impl RlintDeclarationHeaders {
     }
 }
 
-pub(crate) fn rlint_get_symbol_facts(host: &dyn CheckerHost, p: &Params) -> CheckerResult<Value> {
+pub(crate) fn lintrs_get_symbol_facts(host: &dyn CheckerHost, p: &Params) -> CheckerResult<Value> {
     let locations = p.string_array("locations")?;
     if locations.len() > 256 {
         return Err(CheckerError::invalid(
@@ -68,7 +68,7 @@ pub(crate) fn rlint_get_symbol_facts(host: &dyn CheckerHost, p: &Params) -> Chec
         .into_iter()
         .map(|location| s.resolve_node(location))
         .collect::<CheckerResult<Vec<_>>>()?;
-    let mut declarations = RlintDeclarationHeaders::default();
+    let mut declarations = LintrsDeclarationHeaders::default();
     let mut results = Vec::with_capacity(nodes.len());
     for node in nodes {
         let mut result = super::json::Obj::new();
@@ -94,7 +94,7 @@ pub(crate) fn rlint_get_symbol_facts(host: &dyn CheckerHost, p: &Params) -> Chec
         .build())
 }
 
-pub(crate) fn rlint_get_aliased_symbol_facts(
+pub(crate) fn lintrs_get_aliased_symbol_facts(
     host: &dyn CheckerHost,
     p: &Params,
 ) -> CheckerResult<Value> {
@@ -104,7 +104,7 @@ pub(crate) fn rlint_get_aliased_symbol_facts(
     let symbol = s.resolve_symbol(&p.symbol_ref("symbol")?)?;
     let alias = s.c().get_aliased_symbol(symbol);
     let response = s.symbol_response(alias)?;
-    let mut declarations = RlintDeclarationHeaders::default();
+    let mut declarations = LintrsDeclarationHeaders::default();
     if include_declarations {
         declarations.append(&s, alias)?;
     }

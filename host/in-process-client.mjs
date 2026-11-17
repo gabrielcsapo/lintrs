@@ -8,9 +8,9 @@ if (source === null)
 const { combineTimingInfo, disabledTimingInfo, TimingCollector } = await import(
   pathToFileURL(join(source, "api/timing.ts")).href
 );
-const bindingPath = process.env.RLINT_IN_PROCESS_BINDING;
+const bindingPath = process.env.LINTRS_IN_PROCESS_BINDING;
 if (bindingPath === undefined || !isAbsolute(bindingPath))
-  throw new Error("RLINT_IN_PROCESS_BINDING must name an absolute .node file");
+  throw new Error("LINTRS_IN_PROCESS_BINDING must name an absolute .node file");
 const binding = createRequire(import.meta.url)(bindingPath);
 if (typeof binding.createSession !== "function")
   throw new Error("The native binding does not export createSession");
@@ -30,11 +30,11 @@ export class Client {
         "Case-sensitivity overrides and external content mappers are unsupported by the in-process bridge",
       );
     this.session =
-      process.env.RLINT_SHARED_SESSION === undefined
+      process.env.LINTRS_SHARED_SESSION === undefined
         ? binding.createSession(resolve(options.cwd ?? process.cwd()))
-        : binding.attachSession(process.env.RLINT_SHARED_SESSION);
+        : binding.attachSession(process.env.LINTRS_SHARED_SESSION);
     this.nativeMethods =
-      process.env.RLINT_TYPED_NATIVE === "1"
+      process.env.LINTRS_TYPED_NATIVE === "1"
         ? new Set(this.session.typedMethods())
         : undefined;
     this.timing = options.collectTiming ? new TimingCollector() : undefined;
@@ -83,7 +83,7 @@ export class Client {
 
   nodeFacts(snapshot, project, file, indices, mask, fields = []) {
     if (fields.length > 0)
-      return this.direct("rlintNodeFactsPlanned", () =>
+      return this.direct("lintrsNodeFactsPlanned", () =>
         this.session.nodeFactsPlanned(
           snapshot,
           project,
@@ -93,13 +93,13 @@ export class Client {
           fields,
         ),
       );
-    return this.direct("rlintNodeFacts", () =>
+    return this.direct("lintrsNodeFacts", () =>
       this.session.nodeFacts(snapshot, project, file, indices, mask),
     );
   }
 
   objectProperty(snapshot, project, kind, handle, property) {
-    return this.direct(`rlintProperty:${kind}:${property}`, () =>
+    return this.direct(`lintrsProperty:${kind}:${property}`, () =>
       this.session.objectProperty(snapshot, project, kind, handle, property),
     );
   }

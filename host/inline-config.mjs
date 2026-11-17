@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { hostCommand } from "./host-command.mjs";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
@@ -15,14 +15,9 @@ export function inlineConfigs(files, configs, rules) {
   });
   const overrides = new Map();
   if (sources.length === 0) return overrides;
-  const result = spawnSync(process.env.RLINT_BINARY, ["--host-comments"], {
-    input: JSON.stringify(sources),
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.error !== undefined) throw result.error;
-  if (result.status !== 0) throw new Error(result.stderr.trim());
-  const comments = JSON.parse(result.stdout);
+  const comments = JSON.parse(
+    hostCommand("host-comments", JSON.stringify(sources), 64 * 1024 * 1024),
+  );
   const parser = new ConfigCommentParser();
   const levels = { off: 0, warn: 1, error: 2 };
   for (const [index, source] of sources.entries()) {

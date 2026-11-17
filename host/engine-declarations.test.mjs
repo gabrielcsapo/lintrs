@@ -33,15 +33,15 @@ test("declaration headers preserve alias identity and UTF-16 ranges without fetc
     "// 😀\nexport class Imported {}\nexport interface Other { value: string }\n",
   );
   const profile = join(f.dir, "header-profile.json");
-  const actual = run(f, [], { RLINT_TYPE_PROFILE: profile });
+  const actual = run(f, [], { LINTRS_TYPE_PROFILE: profile });
   assert.equal(actual.status, 1, actual.stderr);
   assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
-  if (process.env.RLINT_COMPACT_DECLARATIONS === "1") {
+  if (process.env.LINTRS_COMPACT_DECLARATIONS === "1") {
     const timing = JSON.parse(readFileSync(profile, "utf8"));
     assert.equal(timing.api.totals.sourceFilesFetched, 1);
     assert.equal(timing.native.getAliasedSymbol, undefined);
-    if (process.env.RLINT_FUSED_SYMBOLS === "1")
-      assert.equal(timing.native.rlintGetAliasedSymbolFacts, undefined);
+    if (process.env.LINTRS_FUSED_SYMBOLS === "1")
+      assert.equal(timing.native.lintrsGetAliasedSymbolFacts, undefined);
   }
 });
 

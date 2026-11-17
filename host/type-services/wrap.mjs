@@ -1,3 +1,4 @@
+import { profiler } from "../profile.mjs";
 import { createGetHandler } from "./proxy-get.mjs";
 
 // `wrap` is the identity-preserving front door to the tsc-compatible proxies:
@@ -20,7 +21,16 @@ export function createWrap(ctx) {
     compactDeclaration,
   } = ctx;
   const handlerFor = createGetHandler(ctx);
-  return function wrap(
+  const profile = profiler();
+  // TIMING: wrapping SDK objects into compatible proxies is adapter work.
+  // Recursive calls inside run under the outer charge.
+  if (profile !== undefined)
+    return (...args) =>
+      profile.active("adapter")
+        ? wrap(...args)
+        : profile.charge("adapter", "wrap", () => wrap(...args));
+  return wrap;
+  function wrap(
     value,
     legacy = false,
     resolvedCompact = false,
@@ -52,10 +62,20 @@ export function createWrap(ctx) {
     if (!symbolFacts?.compact && cache.has(value)) return cache.get(value);
     const isNode =
       typeof value.kind === "number" && typeof value.pos === "number";
-    if (isNode && !resolvedCompact) {
-      if (nodeProxies.has(value.id)) return nodeProxies.get(value.id);
-      if (symbolFacts?.compact && declarationHeaders.has(value.id))
-        return compactDeclaration(new sdk.api.NodeHandle(value.id, project));
+    // Node identity by (file path, index); see NodeProxies. The id string is
+    // only built when needed (no path/index, or compact declarations).
+    const tracked = isNode && !resolvedCompact;
+    const path = tracked ? value.sourceFile?.path : undefined;
+    const index = tracked ? value.index : undefined;
+    const id = () => value.id;
+    if (tracked) {
+      const existing = nodeProxies.get(path, index, id);
+      if (existing !== undefined) return existing;
+      if (symbolFacts?.compact) {
+        const full = id();
+        if (declarationHeaders.has(full))
+          return compactDeclaration(new sdk.api.NodeHandle(full, project));
+      }
     }
     if (cache.has(value)) return cache.get(value);
     const isHeritageType =
@@ -89,7 +109,7 @@ export function createWrap(ctx) {
     );
     cache.set(value, proxy);
     originals.set(proxy, value);
-    if (isNode && !resolvedCompact) nodeProxies.set(value.id, proxy);
+    if (tracked) nodeProxies.set(path, index, id, proxy);
     return proxy;
-  };
+  }
 }

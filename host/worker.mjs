@@ -8,7 +8,7 @@ const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 let completed = 0;
 for await (const line of input) {
   const task = JSON.parse(line);
-  process.env.RLINT_CONFIG_EXPORT = task.configExport ?? "default";
+  process.env.LINTRS_CONFIG_EXPORT = task.configExport ?? "default";
   const started = performance.now();
   let result;
   try {

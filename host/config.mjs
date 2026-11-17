@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 export async function loadConfig(
   path,
-  exportName = process.env.RLINT_CONFIG_EXPORT ?? "default",
+  exportName = process.env.LINTRS_CONFIG_EXPORT ?? "default",
 ) {
   const entry = resolve(path);
   if (!/\.[cm]?js$/.test(entry)) {

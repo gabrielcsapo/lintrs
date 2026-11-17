@@ -146,8 +146,8 @@ fn assignability_batch(
             "Assignability batches allow at most 64 targets",
         ));
     }
-    if std::env::var_os("RLINT_TRUE_BULK").is_some_and(|value| value == "1") {
-        return session.handle_nested_request("rlintIsTypeAssignableToManyNative", params, depth);
+    if std::env::var_os("LINTRS_TRUE_BULK").is_some_and(|value| value == "1") {
+        return session.handle_nested_request("lintrsIsTypeAssignableToManyNative", params, depth);
     }
     let mut answers = Vec::with_capacity(batch.targets.len());
     for target in batch.targets {
@@ -181,7 +181,7 @@ fn dispatch(
     params: &[u8],
     depth: u32,
 ) -> tsrs_api::ApiResult<tsrs_api::Response> {
-    if method == "rlintIsTypeAssignableToMany" {
+    if method == "lintrsIsTypeAssignableToMany" {
         assignability_batch(session, params, depth)
     } else {
         session.handle_nested_request(method, params, depth)
@@ -194,7 +194,7 @@ pub(crate) fn dispatch_in_process(
     method: &str,
     params: &[u8],
 ) -> tsrs_api::ApiResult<tsrs_api::Response> {
-    if method == "rlintNativeProbe" {
+    if method == "lintrsNativeProbe" {
         #[derive(Deserialize)]
         struct Probe {
             #[serde(default)]

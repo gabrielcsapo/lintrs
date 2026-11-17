@@ -14,6 +14,7 @@ import { loadConfig } from "./config.mjs";
 import { resolveNativeLibrary } from "./native/resolve.mjs";
 import { createGraphQLHost } from "./graphql.mjs";
 import { inlineConfigs } from "./inline-config.mjs";
+import { profiler } from "./profile.mjs";
 import { createTypeServices } from "./type-services.mjs";
 
 const require = createRequire(import.meta.url);
@@ -143,7 +144,7 @@ function normalizeVisitorFields(sourceCode) {
   visit(sourceCode.ast);
 }
 
-function selectFiles(paths, configs) {
+export function selectFiles(paths, configs) {
   const files = new Set();
   const visit = path => {
     const stat = lstatSync(path);
@@ -171,6 +172,7 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
       `The compatibility adapter supports Oxlint 1.83.0; found ${version}`,
     );
   }
+  const profile = profiler();
   const {
     configs: baseConfigs,
     rules,
@@ -193,7 +195,7 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
   const scriptFiles = files.filter(file => !file.endsWith(".graphql"));
   const graphqlFiles = files.filter(file => file.endsWith(".graphql"));
   const registrationId = registrationFor(rules);
-  const directory = mkdtempSync(join(tmpdir(), "rlint-host-"));
+  const directory = mkdtempSync(join(tmpdir(), "lintrs-host-"));
   const configFile = join(directory, "oxlint.json");
   const output = [];
   const failures = [];
@@ -204,7 +206,7 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
   const nativeRules = new Map();
   const nativeLibraries = new Map();
   for (const [index, [id, rule]] of [...rules].entries()) {
-    if (rule.meta?.rlint?.native === true) {
+    if (rule.meta?.lintrs?.native === true) {
       nativeRules.set(id, rule);
       continue;
     }
@@ -225,11 +227,19 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
             ? context.sourceCode
             : Object.create(context.sourceCode, {
                 parserServices: {
-                  value: (current.services ??= services(
-                    current.filePath,
-                    context.sourceCode,
-                    current.config,
-                  )),
+                  value: (current.services ??= profile
+                    ? profile.phase("Type services setup", () =>
+                        services(
+                          current.filePath,
+                          context.sourceCode,
+                          current.config,
+                        ),
+                      )
+                    : services(
+                        current.filePath,
+                        context.sourceCode,
+                        current.config,
+                      )),
                 },
               }));
         const adapted = Object.create(context, {
@@ -260,13 +270,24 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
             },
           },
         });
-        if (services?.withRule === undefined) return rule.create(adapted);
-        const listeners = services.withRule(id, () => rule.create(adapted));
+        // Listeners run inside the access-plan scope (adaptive facts) and/or
+        // a profiler rule frame (TIMING); without either, they run as is.
+        const withRule = services?.withRule;
+        const within =
+          profile === undefined
+            ? withRule === undefined
+              ? undefined
+              : fn => withRule(id, fn)
+            : withRule === undefined
+              ? fn => profile.rule(id, fn)
+              : fn => profile.rule(id, () => withRule(id, fn));
+        if (within === undefined) return rule.create(adapted);
+        const listeners = within(() => rule.create(adapted));
         return Object.fromEntries(
           Object.entries(listeners).map(([selector, listener]) => [
             selector,
             function (...args) {
-              return services.withRule(id, () => listener.apply(this, args));
+              return within(() => listener.apply(this, args));
             },
           ]),
         );
@@ -275,7 +296,7 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
   }
   const pluginName =
     registrations.get(registrationId)?.name ??
-    `rlint_rules_${registrations.size}`;
+    `lintrs_rules_${registrations.size}`;
   writeFileSync(
     configFile,
     JSON.stringify({
@@ -295,14 +316,14 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
       if (rule === undefined) continue;
       const severity = setting[0] ?? 0;
       if (severity === 0 || (quiet && severity === 1)) continue;
-      if (!nativeLibraries.has(rule.meta.rlint))
+      if (!nativeLibraries.has(rule.meta.lintrs))
         nativeLibraries.set(
-          rule.meta.rlint,
-          resolveNativeLibrary(rule.meta.rlint),
+          rule.meta.lintrs,
+          resolveNativeLibrary(rule.meta.lintrs),
         );
-      libraries.add(nativeLibraries.get(rule.meta.rlint));
+      libraries.add(nativeLibraries.get(rule.meta.lintrs));
       specs.push({
-        name: rule.meta.rlint.rule,
+        name: rule.meta.lintrs.rule,
         id: ruleId,
         severity,
         options: setting.slice(1),
@@ -318,15 +339,19 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
         `Native rules are enabled for ${filePath} but no type-service ` +
           "session can run them (the in-process binding is required)",
       );
-    const diagnostics = services.runNative(filePath, {
-      libraries,
-      rules: specs.map(({ name, id, options }) => ({
-        name,
-        id,
-        options: options.length === 1 ? options[0] : options,
-      })),
-      jsSkipped,
-    });
+    const runNative = () =>
+      services.runNative(filePath, {
+        libraries,
+        rules: specs.map(({ name, id, options }) => ({
+          name,
+          id,
+          options: options.length === 1 ? options[0] : options,
+        })),
+        jsSkipped,
+      });
+    const diagnostics = profile
+      ? profile.phase("Native rules (Rust)", runNative)
+      : runNative();
     return (diagnostics ?? []).map(diagnostic => {
       const spec = specs.find(item => item.id === diagnostic.ruleId);
       const start = position(diagnostic.pos);
@@ -377,6 +402,12 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
   const nativeOnlyFiles = scriptFiles.filter(
     file => !hasEnabledJsRules(configs.getConfig(file)),
   );
+  // Resolve every native rule library now, building local crates, before
+  // oxlint allocates its raw-transfer buffers: a build forks cargo, which
+  // Linux refuses (ENOMEM) once the host holds those buffers. Resolution is
+  // cached, so the per-file lookups during linting reuse these results.
+  if (nativeRules.size > 0)
+    for (const file of scriptFiles) nativeSpecsFor(configs.getConfig(file));
 
   if (
     jsFiles.length > 0 &&
@@ -536,17 +567,24 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
       ? result
       : null;
   };
-  const parserThreads = process.env.RLINT_OXLINT_THREADS;
+  const parserThreads = process.env.LINTRS_OXLINT_THREADS;
   if (
     parserThreads !== undefined &&
     (!Number.isSafeInteger(Number(parserThreads)) || Number(parserThreads) < 1)
   )
-    throw new Error("RLINT_OXLINT_THREADS must be a positive integer");
+    throw new Error("LINTRS_OXLINT_THREADS must be a positive integer");
   const args = [
     ...(parserThreads === undefined ? [] : ["--threads", parserThreads]),
     "-c",
     configFile,
     "--silent",
+    // stdout carries lintrs' results, so oxlint must print nothing. --silent
+    // only drops diagnostics: oxlint's default and GitHub formats still print
+    // "Found … / Finished in …", and it picks its format from the
+    // environment (agent, GITHUB_ACTIONS, else default). The unix format
+    // prints neither a summary nor, with --silent, a problem count.
+    "--format",
+    "unix",
     "--disable-nested-config",
     "--no-ignore",
     ...jsFiles,

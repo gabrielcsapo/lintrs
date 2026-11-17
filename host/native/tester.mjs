@@ -12,16 +12,16 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Runs native rule cases through the real rlint pipeline: a temp project with
+// Runs native rule cases through the real lintrs pipeline: a temp project with
 // a tsconfig and an eslint.config.mjs that imports the plugin module.
 export class NativeRuleTester {
   /**
    * @param {object} config
    * @param {string} config.plugin module specifier of a file default-exporting
    *   the nativePlugin() result (absolute path or file: URL)
-   * @param {string} [config.binary] rlint binary; defaults to the native
-   *   layout under target/rlint-native
-   * @param {object} [config.env] extra environment for the rlint run
+   * @param {string} [config.binary] lintrs binary; defaults to the native
+   *   layout under target/lintrs-native
+   * @param {object} [config.env] extra environment for the lintrs run
    */
   constructor({ plugin, binary, env, nodeModules } = {}) {
     if (plugin === undefined)
@@ -31,7 +31,7 @@ export class NativeRuleTester {
       : resolve(plugin);
     this.binary =
       binary ??
-      resolve(import.meta.dirname, "../../target/rlint-native/bin/rlint");
+      resolve(import.meta.dirname, "../../target/lintrs-native/bin/lintrs");
     this.env = env ?? {};
     this.nodeModules =
       nodeModules ?? resolve(import.meta.dirname, "../../node_modules");
@@ -43,7 +43,7 @@ export class NativeRuleTester {
       cases.map((testCase, index) => {
         const normalized =
           typeof testCase === "string" ? { code: testCase } : testCase;
-        const dir = mkdtempSync(join(tmpdir(), "rlint-ruletest-"));
+        const dir = mkdtempSync(join(tmpdir(), "lintrs-ruletest-"));
         try {
           if (existsSync(this.nodeModules))
             symlinkSync(this.nodeModules, join(dir, "node_modules"), "dir");
@@ -85,7 +85,7 @@ export default [{ files: ["**/*.ts"], plugins: { ${JSON.stringify(pluginName)}: 
             },
           );
           if (result.status === 2)
-            throw new Error(`rlint failed: ${result.stderr}`);
+            throw new Error(`lintrs failed: ${result.stderr}`);
           const parsed = JSON.parse(result.stdout || "[]");
           return { normalized, result: parsed[0] ?? { messages: [] } };
         } finally {

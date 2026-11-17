@@ -1,3 +1,4 @@
+import { profiler } from "../profile.mjs";
 import { IdentityMap } from "./state.mjs";
 
 // Checker-query routing: memoization, per-kind batching, native node-fact
@@ -22,6 +23,9 @@ export function createQueries(ctx) {
     "getSymbolAtLocation",
     "getTypeFromTypeNode",
     "getContextualType",
+    // no-misused-promises asks for the same (call, index) once per signature
+    // parameter it visits; 44% of these requests were exact repeats.
+    "getContextualTypeForArgumentAtIndex",
     "getResolvedSignature",
     "getBaseConstraintOfType",
     "getTypeOfSymbolAtLocation",
@@ -75,9 +79,21 @@ export function createQueries(ctx) {
   };
   let batches = new Map();
   let nodesByKind = new Map();
+  // Adaptive prefetch: for these queries, the first questions about a node
+  // kind in a file are answered one at a time; only once a file shows it is
+  // asked about that kind a lot does the rest of the kind get fetched in
+  // bulk. On recommendedTypeChecked, unbound-method asks for under one symbol
+  // per file, and prefetching every identifier for it doubled its time;
+  // rules that ask about most identifiers still get batches.
+  // getTypeAtLocation stays on full prefetch: rules ask about types densely,
+  // and adaptive prefetch measured slower at every threshold (2, 4, 16).
+  const adaptiveQueries = new Set(["getSymbolAtLocation"]);
+  const ADAPTIVE_THRESHOLD = 16;
+  let asked = new Map();
   const prepareFile = nodes => {
     nodesByKind = nodes;
     batches = new Map();
+    asked = new Map();
   };
   const batchedQueries = new Set([
     "getTypeAtLocation",
@@ -93,7 +109,7 @@ export function createQueries(ctx) {
       convert: lazy?.type,
     },
   };
-  const prefetchNative = process.env.RLINT_LAZY_PREFETCH === "1";
+  const prefetchNative = process.env.LINTRS_LAZY_PREFETCH === "1";
   const query = (owner, key, fn, args, memo) => {
     if (
       symbolFacts !== undefined &&
@@ -187,18 +203,36 @@ export function createQueries(ctx) {
     )
       return fn.apply(owner, args);
     const node = args[0];
-    const candidates = nodesByKind.get(node?.kind);
-    if (candidates === undefined || !candidates.has(node))
-      return symbolFacts !== undefined && key === "getSymbolAtLocation"
+    const single = () =>
+      symbolFacts !== undefined && key === "getSymbolAtLocation"
         ? readSymbols([node])[0]
         : fn.apply(owner, args);
+    const candidates = nodesByKind.get(node?.kind);
+    if (candidates === undefined || !candidates.has(node)) return single();
     let results = batches.get(key);
     if (results === undefined) {
       results = new IdentityMap();
       batches.set(key, results);
     }
+    if (!results.has(node) && adaptiveQueries.has(key)) {
+      let byKind = asked.get(key);
+      if (byKind === undefined) {
+        byKind = new Map();
+        asked.set(key, byKind);
+      }
+      const count = (byKind.get(node.kind) ?? 0) + 1;
+      byKind.set(node.kind, count);
+      if (count <= ADAPTIVE_THRESHOLD) {
+        const value = single();
+        results.set(node, value);
+        return value;
+      }
+    }
     if (!results.has(node)) {
-      const nodes = [...candidates];
+      // Nodes already answered keep their answers (and identities).
+      const nodes = [...candidates].filter(
+        candidate => !results.has(candidate),
+      );
       for (let start = 0; start < nodes.length; start += 256) {
         const group = nodes.slice(start, start + 256);
         const values =
@@ -215,6 +249,24 @@ export function createQueries(ctx) {
     }
     return results.get(node);
   };
+  const profile = profiler();
+  // A rule callback the adapter calls (a checker method taking a function)
+  // is the rule's own code again, not adapter work.
+  const resume = profile === undefined ? fn => fn() : profile.resume;
+  const ownerKind = owner =>
+    owner === project.checker
+      ? "checker"
+      : owner === project.program
+        ? "program"
+        : typeof owner.isUnionType === "function"
+          ? "type"
+          : owner instanceof sdk.api.Symbol
+            ? "symbol"
+            : owner instanceof sdk.api.Signature
+              ? "signature"
+              : typeof owner.kind === "number" && typeof owner.pos === "number"
+                ? "node"
+                : "object";
   const invoke = (owner, key, fn) => {
     let bound = methods.get(owner);
     if (bound === undefined) {
@@ -227,10 +279,13 @@ export function createQueries(ctx) {
         (typeof owner.isUnionType === "function" && key === "getProperty")
           ? new Map()
           : undefined;
-      bound.set(key, (...args) => {
+      const call = (...args) => {
         const rawArgs = args.map(argument =>
           typeof argument === "function"
-            ? (...items) => unwrap(argument(...items.map(ctx.wrap)))
+            ? (...items) => {
+                const wrapped = items.map(ctx.wrap);
+                return unwrap(resume(() => argument(...wrapped)));
+              }
             : unwrap(argument),
         );
         let entry;
@@ -256,7 +311,23 @@ export function createQueries(ctx) {
         if (owner === project.checker && key === "getSymbolAtLocation")
           native?.plans?.observe(result, key, rawArgs[0]?.kind);
         return result;
-      });
+      };
+      // TIMING: the bound method's own work (unwrapping, memo lookups,
+      // building and wrapping results) is adapter work; its checker
+      // requests still bill as checker time. Labelled "<owner>.<method>".
+      const label =
+        profile === undefined
+          ? undefined
+          : `${ownerKind(owner)}.${String(key)}`;
+      bound.set(
+        key,
+        profile === undefined
+          ? call
+          : (...args) =>
+              profile.active("adapter")
+                ? call(...args)
+                : profile.charge("adapter", label, () => call(...args)),
+      );
     }
     return bound.get(key);
   };

@@ -12,7 +12,7 @@ const eslintRequire = createRequire(require.resolve("eslint"));
 const { FlatConfigArray } = eslintRequire("./config/flat-config-array.js");
 
 test("discovery preserves conditional paths, scoped ignores, global negations, and unconfigured files", async t => {
-  const root = mkdtempSync(join(tmpdir(), "rlint-discovery-"));
+  const root = mkdtempSync(join(tmpdir(), "lintrs-discovery-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const configs = new FlatConfigArray(
     [

@@ -1,4 +1,4 @@
-pub(crate) fn rlint_get_contextual_types(
+pub(crate) fn lintrs_get_contextual_types(
     host: &dyn CheckerHost,
     p: &Params,
 ) -> CheckerResult<Value> {

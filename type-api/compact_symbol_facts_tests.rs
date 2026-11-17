@@ -1,5 +1,5 @@
 #[test]
-fn rlint_compact_symbol_facts_match_scalar_queries_and_declaration_headers() {
+fn lintrs_compact_symbol_facts_match_scalar_queries_and_declaration_headers() {
     const SOURCE: &str = "// Unicode Ω𐐀\nimport { target as local } from './other'; export const value = local; export interface Merged { first: string }; export interface Merged { second: number }; export const unused = 'none';";
     let host = TestHost::new(&[
         (
@@ -21,8 +21,8 @@ fn rlint_compact_symbol_facts_match_scalar_queries_and_declaration_headers() {
             r#""locations":{locations_json},"resolveAliases":{aliases}"#
         )))
         .unwrap();
-        let params = super::params::Params::new(&value, "rlintGetSymbolFacts").unwrap();
-        super::handlers_symbols::rlint_get_symbol_facts(&host, &params).unwrap()
+        let params = super::params::Params::new(&value, "lintrsGetSymbolFacts").unwrap();
+        super::handlers_symbols::lintrs_get_symbol_facts(&host, &params).unwrap()
     };
     for aliases in [false, true] {
         let batch = call(aliases);
@@ -30,9 +30,9 @@ fn rlint_compact_symbol_facts_match_scalar_queries_and_declaration_headers() {
             r#""locations":{locations_json},"resolveAliases":{aliases},"includeDeclarations":false"#
         )))
         .unwrap();
-        let params = super::params::Params::new(&value, "rlintGetSymbolFacts").unwrap();
+        let params = super::params::Params::new(&value, "lintrsGetSymbolFacts").unwrap();
         let without_headers =
-            super::handlers_symbols::rlint_get_symbol_facts(&host, &params).unwrap();
+            super::handlers_symbols::lintrs_get_symbol_facts(&host, &params).unwrap();
         assert_eq!(field(&without_headers, "results"), field(&batch, "results"));
         assert!(arr(field(&without_headers, "declarations")).is_empty());
         let results = arr(field(&batch, "results"));
@@ -55,8 +55,8 @@ fn rlint_compact_symbol_facts_match_scalar_queries_and_declaration_headers() {
                     json::unmarshal(&host.sp(&format!(r#""symbol":{}"#, host.symbol_ref(&symbol))))
                         .unwrap();
                 let params =
-                    super::params::Params::new(&value, "rlintGetAliasedSymbolFacts").unwrap();
-                let alias = super::handlers_symbols::rlint_get_aliased_symbol_facts(&host, &params)
+                    super::params::Params::new(&value, "lintrsGetAliasedSymbolFacts").unwrap();
+                let alias = super::handlers_symbols::lintrs_get_aliased_symbol_facts(&host, &params)
                     .unwrap();
                 assert_eq!(field(&alias, "symbol"), &expected);
                 assert!(!arr(field(&alias, "declarations")).is_empty());
@@ -66,9 +66,9 @@ fn rlint_compact_symbol_facts_match_scalar_queries_and_declaration_headers() {
                 )))
                 .unwrap();
                 let params =
-                    super::params::Params::new(&value, "rlintGetAliasedSymbolFacts").unwrap();
+                    super::params::Params::new(&value, "lintrsGetAliasedSymbolFacts").unwrap();
                 let without_headers =
-                    super::handlers_symbols::rlint_get_aliased_symbol_facts(&host, &params)
+                    super::handlers_symbols::lintrs_get_aliased_symbol_facts(&host, &params)
                         .unwrap();
                 assert_eq!(field(&without_headers, "symbol"), &expected);
                 assert!(arr(field(&without_headers, "declarations")).is_empty());

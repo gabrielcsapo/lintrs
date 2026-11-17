@@ -17,9 +17,9 @@ function callerDirectory() {
 
 /**
  * Declares an ESLint plugin whose rules are implemented in Rust and run under
- * rlint. Under plain ESLint the stubs fail loudly.
+ * lintrs. Under plain ESLint the stubs fail loudly.
  *
- * `crate` — path/URL of a local Rust rule crate (built from source by rlint).
+ * `crate` — path/URL of a local Rust rule crate (built from source by lintrs).
  * `prebuilt` — map of platform keys (`darwin-arm64`, `linux-x64-gnu`, …) to
  * npm package names shipping a compiled rule library.
  */
@@ -37,7 +37,7 @@ export function nativePlugin({ name, rules, crate, prebuilt }) {
         {
           meta: {
             schema: false,
-            rlint: {
+            lintrs: {
               native: true,
               plugin: name,
               rule,
@@ -53,7 +53,7 @@ export function nativePlugin({ name, rules, crate, prebuilt }) {
           },
           create() {
             throw new Error(
-              `${name}/${rule} is a native rlint rule; run it with rlint`,
+              `${name}/${rule} is a native lintrs rule; run it with lintrs`,
             );
           },
         },
