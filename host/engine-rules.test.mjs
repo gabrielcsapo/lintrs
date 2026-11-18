@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -211,4 +218,23 @@ test("invalid syntax fails the run rather than returning a partial result", t =>
   const result = run(f);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /incomplete/u);
+});
+
+test("a run leaves nothing in the temporary directory, whether it succeeds or fails", t => {
+  const temporary = mkdtempSync(join(tmpdir(), "lintrs-tmpdir-"));
+  t.after(() => rmSync(temporary, { recursive: true, force: true }));
+  const clean = fixture(t, {
+    rules: { "no-debugger": "error" },
+    source: "const clean = 1;\n",
+  });
+  const broken = fixture(t, {
+    rules: { "no-debugger": "error" },
+    source: "const = ;",
+  });
+  const environment = { TMPDIR: temporary, TMP: temporary, TEMP: temporary };
+  const passed = run(clean, [], environment);
+  assert.equal(passed.status, 0, passed.stderr);
+  const failed = run(broken, [], environment);
+  assert.equal(failed.status, 2, failed.stderr);
+  assert.deepEqual(readdirSync(temporary), []);
 });
