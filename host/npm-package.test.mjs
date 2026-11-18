@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "./test-support/temporary.mjs";
 
 import { platformKey } from "./native/build.mjs";
 
@@ -146,7 +147,7 @@ test(
       PATH: `${nodeBin}:/usr/bin:/bin`,
       HOME: process.env.HOME,
       TMPDIR: process.env.TMPDIR,
-      LINTRS_CACHE_DIR: mkdtempSync(join(tmpdir(), "lintrs-cache-")),
+      LINTRS_CACHE_DIR: temporaryDirectory("lintrs-cache-"),
     };
 
     // (1) A plain JS rule diagnostic through `npx lintrs`.

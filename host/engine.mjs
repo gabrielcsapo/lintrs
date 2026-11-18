@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -165,7 +166,18 @@ export function selectFiles(paths, configs) {
   return [...files].sort();
 }
 
-export async function runHost({ configPath, paths, quiet = false, services }) {
+export async function runHost(options) {
+  // oxlint reads its configuration from a file; it lives in a directory of
+  // its own for the run and is removed when the run ends, failed or not.
+  const directory = mkdtempSync(join(tmpdir(), "lintrs-host-"));
+  try {
+    return await lint(directory, options);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+async function lint(directory, { configPath, paths, quiet = false, services }) {
   const version = require("oxlint/package.json").version;
   if (version !== "1.83.0") {
     throw new Error(
@@ -195,7 +207,6 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
   const scriptFiles = files.filter(file => !file.endsWith(".graphql"));
   const graphqlFiles = files.filter(file => file.endsWith(".graphql"));
   const registrationId = registrationFor(rules);
-  const directory = mkdtempSync(join(tmpdir(), "lintrs-host-"));
   const configFile = join(directory, "oxlint.json");
   const output = [];
   const failures = [];
@@ -682,6 +693,5 @@ export async function runHost({ configPath, paths, quiet = false, services }) {
     engine: "oxlint-js-compat",
     oxlintVersion: version,
     root,
-    artifacts: directory,
   };
 }

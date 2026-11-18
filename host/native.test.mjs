@@ -16,6 +16,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "./test-support/temporary.mjs";
 
 import { tsrsSdkRoot } from "./type-services/sdk.mjs";
 
@@ -39,7 +40,7 @@ const sdk = haveNative ? tsrsSdkRoot(root) : undefined;
 function project(t, { config, files, crates } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "lintrs-native-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const cache = mkdtempSync(join(tmpdir(), "lintrs-cache-"));
+  const cache = temporaryDirectory("lintrs-cache-");
   t.after(() => rmSync(cache, { recursive: true, force: true }));
   mkdirSync(join(dir, "node_modules"), { recursive: true });
   for (const entry of [
@@ -215,7 +216,7 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
       });
       if (rustup.error !== undefined || rustup.status !== 0)
         return t.skip("rustup is not installed");
-      const cache = mkdtempSync(join(tmpdir(), "lintrs-cache-"));
+      const cache = temporaryDirectory("lintrs-cache-");
       t.after(() => rmSync(cache, { recursive: true, force: true }));
       const env = { ...process.env, LINTRS_CACHE_DIR: cache };
       // Anywhere but this repo: no rust-toolchain.toml applies, so a default
@@ -236,7 +237,7 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
     "mixed JS + native rules; native-only files skip JS",
     async t => {
       const profile = join(
-        mkdtempSync(join(tmpdir(), "lintrs-profile-")),
+        temporaryDirectory("lintrs-profile-"),
         "profile.json",
       );
       const { dir, cache } = project(t, {
@@ -274,7 +275,7 @@ export default [{ files: ["**/*.ts"],
   );
 
   await t.test("native-only files are recorded with jsSkipped", async t => {
-    const profileDir = mkdtempSync(join(tmpdir(), "lintrs-profile-"));
+    const profileDir = temporaryDirectory("lintrs-profile-");
     t.after(() => rmSync(profileDir, { recursive: true, force: true }));
     const profile = join(profileDir, "profile.json");
     const { dir, cache } = project(t, {
@@ -582,7 +583,7 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
   await t.test("npm workspace package resolves by crate", async t => {
     const dir = mkdtempSync(join(tmpdir(), "lintrs-native-ws-"));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
-    const cache = mkdtempSync(join(tmpdir(), "lintrs-cache-"));
+    const cache = temporaryDirectory("lintrs-cache-");
     t.after(() => rmSync(cache, { recursive: true, force: true }));
     const pkg = join(dir, "packages", "lint-rules");
     mkdirSync(join(pkg, "rust"), { recursive: true });
@@ -767,7 +768,7 @@ serde_json = "1"
           encoding: "utf8",
           env: {
             ...process.env,
-            LINTRS_CACHE_DIR: mkdtempSync(join(tmpdir(), "lintrs-cache-")),
+            LINTRS_CACHE_DIR: temporaryDirectory("lintrs-cache-"),
             RUSTUP_TOOLCHAIN: "1.96.0",
           },
         },
@@ -789,7 +790,7 @@ serde_json = "1"
         LINTRS_TSRS_SDK: sdk,
         LINTRS_IN_PROCESS_BINDING: nativeBinding,
         LINTRS_TYPED_NATIVE: "1",
-        LINTRS_CACHE_DIR: mkdtempSync(join(tmpdir(), "lintrs-tester-cache-")),
+        LINTRS_CACHE_DIR: temporaryDirectory("lintrs-tester-cache-"),
         RUSTUP_TOOLCHAIN: "1.96.0",
       },
     });

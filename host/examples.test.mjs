@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { temporaryDirectory } from "./test-support/temporary.mjs";
 
 import { tsrsSdkRoot } from "./type-services/sdk.mjs";
 
@@ -30,7 +31,7 @@ const sdk = haveNative ? tsrsSdkRoot(root) : undefined;
 function project(t, files) {
   const dir = mkdtempSync(join(tmpdir(), "lintrs-example-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const cache = mkdtempSync(join(tmpdir(), "lintrs-cache-"));
+  const cache = temporaryDirectory("lintrs-cache-");
   t.after(() => rmSync(cache, { recursive: true, force: true }));
   mkdirSync(join(dir, "node_modules"), { recursive: true });
   for (const entry of readdirSync(join(root, "node_modules"))) {
