@@ -36,13 +36,15 @@ export function tsrsSdkRoot(root) {
   );
   if (metadata.error !== undefined) throw metadata.error;
   if (metadata.status !== 0) throw new Error(metadata.stderr.trim());
+  // tsrs_api is vendored (vendor/tsrs_api); the SDK lives in the tsrs git
+  // checkout, found through any of tsrs's other crates.
   const dependency = JSON.parse(metadata.stdout).packages.find(
-    item => item.name === "tsrs_api",
+    item =>
+      item.name.startsWith("tsrs_") &&
+      item.source?.startsWith("git+https://github.com/oxc-project/tsrs"),
   );
   if (dependency === undefined)
-    throw new Error(
-      "The pinned tsrs API dependency is missing from Cargo metadata",
-    );
+    throw new Error("The pinned tsrs checkout is missing from Cargo metadata");
   return resolve(dirname(dependency.manifest_path), "../../npm/tsrs");
 }
 

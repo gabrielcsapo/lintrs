@@ -1,3 +1,4 @@
+// Modified by lintrs: see vendor/tsrs_api/README.md.
 // Re-entrancy guard for the program's persistent API checker (Go `CheckerLifetimeAPI`).
 //
 // The API checker is a single exclusive slot per program (`checkerPool.persistentSem`). Pinned Go blocks
@@ -17,7 +18,7 @@
 //
 // The gate map is keyed by the program's address. Entries are only created and used while the
 // requesting snapshot keeps that program alive, and an entry is removed as soon as no lease or waiter
-// refers to it, so a key never outlives its program while in use. Keys never leave this module.
+// or snapshot pin refers to it. Snapshot registries release pins before releasing their programs.
 
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -50,7 +51,8 @@ fn lock_gates() -> std::sync::MutexGuard<'static, Option<FxHashMap<usize, Arc<Ga
 /// Exclusive right to acquire the program's API checker; released on drop.
 pub(crate) struct ApiCheckerLease {
     key: usize,
-    gate: Arc<Gate>,
+    gate: Option<Arc<Gate>>,
+    pin: Option<Arc<ApiCheckerGatePin>>,
 }
 
 const RESOURCE: &str = "the program's API checker";
@@ -58,7 +60,10 @@ const RESOURCE: &str = "the program's API checker";
 pub(crate) fn acquire(program: &'static Program) -> CheckerResult<ApiCheckerLease> {
     let key = std::ptr::from_ref::<Program>(program) as usize;
     let gate = Arc::clone(lock_gates().get_or_insert_with(FxHashMap::default).entry(key).or_default());
-    let lease = |gate: Arc<Gate>| ApiCheckerLease { key, gate };
+    acquire_gate(key, gate)
+}
+
+fn acquire_gate(key: usize, gate: Arc<Gate>) -> CheckerResult<ApiCheckerLease> {
     let result = (|| {
         let mut st = gate.state.lock().unwrap_or_else(|e| e.into_inner());
         // One contention state per acquisition (created on first contention, dropped when this
@@ -87,37 +92,106 @@ pub(crate) fn acquire(program: &'static Program) -> CheckerResult<ApiCheckerLeas
         }
     })();
     match result {
-        Ok(()) => Ok(lease(gate)),
+        Ok(()) => Ok(ApiCheckerLease { key, gate: Some(gate), pin: None }),
         Err(e) => {
-            forget_if_unused(key, &gate);
+            forget_if_unused(key, gate);
             Err(e)
         }
     }
 }
 
-fn forget_if_unused(key: usize, gate: &Arc<Gate>) {
+fn forget_if_unused(key: usize, gate: Arc<Gate>) {
     let mut gates = lock_gates();
-    // One reference in the map plus the caller's: nobody else holds or waits on this gate.
-    if Arc::strong_count(gate) == 2 && !gate.state.lock().unwrap_or_else(|e| e.into_inner()).held {
+    if Arc::strong_count(&gate) == 2
+        && !gate
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .held
+    {
         if let Some(map) = gates.as_mut() {
             map.remove(&key);
         }
     }
+    // Serialize the decrement too: concurrent final owners must not both observe another owner
+    // about to disappear and leave the map as the only remaining reference.
+    drop(gate);
 }
 
 impl Drop for ApiCheckerLease {
     fn drop(&mut self) {
+        let Some(gate) = self.gate.take() else { return };
         {
-            let mut st = self.gate.state.lock().unwrap_or_else(|e| e.into_inner());
-            st.held = false;
-            st.holder = None;
+            let mut state = gate.state.lock().unwrap_or_else(|error| error.into_inner());
+            state.held = false;
+            state.holder = None;
         }
-        self.gate.released.notify_all();
-        forget_if_unused(self.key, &self.gate);
+        gate.released.notify_all();
+        if let Some(pin) = self.pin.take() {
+            // Keep the pin alive until this lease's gate reference is gone. Its final drop performs
+            // global cleanup; a live snapshot pin makes that unnecessary on ordinary requests.
+            drop(gate);
+            drop(pin);
+        } else {
+            forget_if_unused(self.key, gate);
+        }
     }
+}
+
+pub(crate) struct ApiCheckerGatePin {
+    key: usize,
+    gate: Option<Arc<Gate>>,
+}
+
+impl ApiCheckerGatePin {
+    pub(crate) fn acquire(self: Arc<Self>) -> CheckerResult<ApiCheckerLease> {
+        let gate = self
+            .gate
+            .as_ref()
+            .ok_or_else(|| CheckerError::client("checker gate pin has been released"))?;
+        let mut lease = acquire_gate(self.key, Arc::clone(gate))?;
+        lease.pin = Some(self);
+        Ok(lease)
+    }
+}
+
+impl Drop for ApiCheckerGatePin {
+    fn drop(&mut self) {
+        if let Some(gate) = self.gate.take() {
+            forget_if_unused(self.key, gate);
+        }
+    }
+}
+
+pub(crate) fn pin(program: &'static Program) -> ApiCheckerGatePin {
+    let key = std::ptr::from_ref::<Program>(program) as usize;
+    let gate = Arc::clone(
+        lock_gates()
+            .get_or_insert_with(FxHashMap::default)
+            .entry(key)
+            .or_default(),
+    );
+    ApiCheckerGatePin {
+        key,
+        gate: Some(gate),
+    }
+}
+
+pub(crate) fn reuse_enabled() -> bool {
+    static ENABLED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+        std::env::var_os("LINTRS_REUSE_CHECKER_GATE").is_some_and(|value| value == "1")
+    });
+    *ENABLED
 }
 
 #[cfg(test)]
 pub(crate) fn is_tracked(program: &'static Program) -> bool {
-    lock_gates().as_ref().is_some_and(|m| m.contains_key(&(program as *const Program as usize)))
+    lock_gates()
+        .as_ref()
+        .is_some_and(|map| map.contains_key(&(std::ptr::from_ref::<Program>(program) as usize)))
+}
+
+#[cfg(test)]
+pub(crate) fn gate_address(lease: &ApiCheckerLease) -> usize {
+    Arc::as_ptr(lease.gate.as_ref().unwrap()) as usize
 }

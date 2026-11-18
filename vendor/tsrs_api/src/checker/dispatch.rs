@@ -1,3 +1,4 @@
+// Modified by lintrs: see vendor/tsrs_api/README.md.
 // Method → handler table for the checker lane (Go `Session.HandleRequest` cases for these methods).
 // The param field names follow each method's pinned params struct (`unmarshalers` in proto.go).
 
@@ -33,6 +34,7 @@ fn dispatch(h: &dyn CheckerHost, method: &str, p: &Params) -> CheckerResult<Chec
         _ => {}
     }
     json(match method {
+        "lintrsIsTypeAssignableToManyNative" => ty::lintrs_is_type_assignable_to_many(h, p),
         "getSymbolAtPosition" => sym::get_symbol_at_position(h, p),
         "getSymbolsAtPositions" => sym::get_symbols_at_positions(h, p),
         "getSymbolAtLocation" => sym::get_symbol_at_location(h, p),
@@ -157,6 +159,7 @@ fn dispatch(h: &dyn CheckerHost, method: &str, p: &Params) -> CheckerResult<Chec
 
 /// Every method this lane dispatches.
 pub const CHECKER_METHODS: &[&str] = &[
+    "lintrsIsTypeAssignableToManyNative",
     "getSymbolAtPosition", "getSymbolsAtPositions", "getSymbolAtLocation", "getSymbolsAtLocations", "getSymbolOfSourceFile",
     "getSymbolsOfSourceFiles", "getTypeOfSymbol", "getTypesOfSymbols", "getDeclaredTypeOfSymbol", "getNonMissingTypeOfSymbol",
     "resolveName", "getSymbolsInScope", "getSignaturesOfType", "getResolvedSignature", "getTypeAtLocation", "getTypeAtLocations",

@@ -35,50 +35,16 @@ jobs:
       - run: npm run format:check
       - run: cargo fetch --locked
       - run: cargo test --locked -p lintrs
-      # The native layout builds from a prepared tree outside the workspace,
-      # so rust-cache (which keeps ./target) never sees it and tsrs compiled
-      # from scratch three times per run: the release binary, the
-      # prefer-dynamic libraries and the extension tests. Cache those target
-      # directories; caches are saved from main only, and PRs restore them.
-      # The marker file comes too: prepare.mjs only writes into a directory
-      # it recognises as an earlier build of this checkout.
-      - name: Restore the native build cache
-        id: native-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            /tmp/lintrs-native-build/lintrs-build.json
-            /tmp/lintrs-native-build/target
-            /tmp/lintrs-native-build/target-native
-            /tmp/lintrs-native-build/tsrs-source/target
-          key: native-v2-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'type-api/**', 'scripts/build-native.mjs') }}
-          restore-keys: native-v2-${{ runner.os }}-
-      - name: Prepare patched tsrs API and build the native layout
+      - name: Build the native layout
         run: |
-          node scripts/build-native.mjs --build /tmp/lintrs-native-build \
-            --out "$PWD/target/lintrs-native"
+          node scripts/build-native.mjs --out "$PWD/target/lintrs-native"
           test -f target/lintrs-native/bin/lintrs
           test -f target/lintrs-native/lib/liblintrs.node
           test -f target/lintrs-native/lib/liblintrs.${{ runner.os == 'macOS' && 'dylib' || 'so' }}
       - name: Lint the typed-native build
-        run: |
-          cargo clippy --offline --all-targets --features typed-native \
-            --manifest-path /tmp/lintrs-native-build/Cargo.toml -p lintrs -- -D warnings
-      - name: Run the injected tsrs extension tests
-        run: |
-          cargo test --offline \
-            --manifest-path /tmp/lintrs-native-build/tsrs-source/Cargo.toml \
-            -p tsrs_api lintrs_
-      - name: Save the native build cache
-        if: github.event_name == 'push' && steps.native-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            /tmp/lintrs-native-build/lintrs-build.json
-            /tmp/lintrs-native-build/target
-            /tmp/lintrs-native-build/target-native
-            /tmp/lintrs-native-build/tsrs-source/target
-          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+        run: cargo clippy --locked --all-targets --features typed-native -p lintrs -- -D warnings
+      - name: Run the tsrs_api extension tests
+        run: cargo test --locked -p tsrs_api lintrs_
       - name: Host tests (eager typed native)
         env:
           LINTRS_TYPED_NATIVE: "1"
@@ -102,7 +68,7 @@ jobs:
         run: npm run test:host
       - name: Build and smoke the distribution
         run: |
-          npm run dist -- --build /tmp/lintrs-native-build
+          npm run dist
           dir=$(node -p 'const fs=require("fs");JSON.parse(fs.readFileSync("dist/"+fs.readdirSync("dist").find(f=>f.endsWith(".json")),"utf8")).directory')
           mv "$dir" "$RUNNER_TEMP/lintrs-moved"
           sdk=$(node -p 'const fs=require("fs");JSON.parse(fs.readFileSync("dist/"+fs.readdirSync("dist").find(f=>f.endsWith(".json")),"utf8")).sdkTarball')

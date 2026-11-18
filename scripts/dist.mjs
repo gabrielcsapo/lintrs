@@ -8,20 +8,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { parseArgs } from "node:util";
 
 const root = resolve(import.meta.dirname, "..");
-const { values } = parseArgs({
-  options: { build: { type: "string" } },
-});
-if (values.build === undefined)
-  throw new Error("Specify --build <prepared native build directory>");
-const build = resolve(values.build);
-const marker = JSON.parse(
-  readFileSync(join(build, "lintrs-build.json"), "utf8"),
-);
-if (marker.root !== root)
-  throw new Error(`${build} was not prepared from this repository`);
 
 function command(executable, args, options = {}) {
   const result = spawnSync(executable, args, {
@@ -54,7 +42,7 @@ for (const artifact of [
   if (!existsSync(artifact))
     throw new Error(`Missing ${artifact}; run npm run build:native first`);
 
-// The prepared manifest keeps tsrs's other crates as git dependencies, so the
+// tsrs_api is vendored, but tsrs's other crates are git dependencies, so the
 // SDK inside the Cargo checkout is located through one of them.
 const metadata = JSON.parse(
   command("cargo", [
@@ -65,7 +53,7 @@ const metadata = JSON.parse(
     "--format-version",
     "1",
     "--manifest-path",
-    join(build, "Cargo.toml"),
+    join(root, "Cargo.toml"),
   ]),
 );
 const sibling = metadata.packages.find(

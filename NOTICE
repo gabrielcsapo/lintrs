@@ -1,11 +1,10 @@
 lintrs
 Copyright (c) 2026 Gabriel Csapo
 
-This repository contains code in type-api/ that is applied as extensions to
-tsrs (https://github.com/oxc-project/tsrs), which is licensed under the
-Apache License, Version 2.0 and copyright the oxc project contributors.
-A copy of the Apache License 2.0 is available at
-https://www.apache.org/licenses/LICENSE-2.0
+vendor/tsrs_api/ is a copy of the tsrs_api crate from tsrs
+(https://github.com/oxc-project/tsrs), licensed under the Apache License,
+Version 2.0 and copyright the oxc project contributors. The license is in
+vendor/tsrs_api/LICENSE and at https://www.apache.org/licenses/LICENSE-2.0.
 
-The extensions are applied to a prepared copy of the tsrs_api crate at build
-time by type-api/prepare.mjs; upstream sources are not modified in place.
+lintrs has modified that copy; modified and added files carry a notice on
+their first line, and vendor/tsrs_api/README.md describes the changes.

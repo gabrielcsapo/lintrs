@@ -51,6 +51,6 @@ See [Contributing](https://gabrielcsapo.github.io/lintrs/contributing).
 
 ## License
 
-MIT. `type-api/` contains extensions applied to
+MIT. `vendor/tsrs_api/` is a modified copy of `tsrs_api` from
 [tsrs](https://github.com/oxc-project/tsrs) (Apache-2.0, oxc-project); see
 `NOTICE`.

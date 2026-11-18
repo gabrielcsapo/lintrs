@@ -1,3 +1,4 @@
+// Modified by lintrs: see vendor/tsrs_api/README.md.
 // Port of microsoft/TypeScript tsc/internal/api (session, proto, callbackfs, requestfilesystem,
 // module_resolution) at the commit pinned in the workspace Cargo.toml. See docs/NODE_API.md for the
 // integration contract, lane ownership and the per-method coverage matrix.
@@ -27,6 +28,7 @@ pub mod snapshots;
 pub mod sourcefiles;
 pub mod transpile;
 pub mod wire;
+pub mod native_rules;
 
 pub(crate) mod checker;
 

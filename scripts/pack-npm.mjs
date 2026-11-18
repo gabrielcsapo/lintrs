@@ -29,7 +29,7 @@ function command(executable, args, options = {}) {
 }
 
 // Locate the tsrs SDK the same way scripts/dist.mjs does: through the Cargo
-// metadata of the prepared build directory (defaults to the standard one).
+// metadata of a tsrs git dependency.
 const native = join(root, "target/lintrs-native");
 const libraryName =
   process.platform === "darwin" ? "liblintrs.dylib" : "liblintrs.so";
@@ -41,15 +41,6 @@ for (const artifact of [
   if (!existsSync(artifact))
     throw new Error(`Missing ${artifact}; run npm run build:native first`);
 
-const markerPath = join(
-  process.env.LINTRS_PREPARED_BUILD ?? "/tmp/lintrs-native-build",
-  "lintrs-build.json",
-);
-if (!existsSync(markerPath))
-  throw new Error(
-    `Missing ${markerPath}; run npm run prepare:native -- --output <dir> first`,
-  );
-const build = dirname(markerPath);
 const target = /^host: (.+)$/mu.exec(command("rustc", ["-vV"]))?.[1];
 if (target === undefined) throw new Error("Cannot determine Rust host target");
 const metadata = JSON.parse(
@@ -61,7 +52,7 @@ const metadata = JSON.parse(
     "--format-version",
     "1",
     "--manifest-path",
-    join(build, "Cargo.toml"),
+    join(root, "Cargo.toml"),
   ]),
 );
 const sibling = metadata.packages.find(

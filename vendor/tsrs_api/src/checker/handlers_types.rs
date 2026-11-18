@@ -1,3 +1,4 @@
+// Modified by lintrs: see vendor/tsrs_api/README.md.
 // Type-, signature- and display-centric handlers (Go tsc/internal/api/session.go).
 
 use tsrs_ast::Kind;
@@ -645,3 +646,50 @@ pub(crate) fn signature_to_signature_declaration(host: &dyn CheckerHost, p: &Par
     }
 }
 
+
+pub(crate) fn lintrs_is_type_assignable_to_many(
+    host: &dyn CheckerHost,
+    p: &Params,
+) -> CheckerResult<Value> {
+    let targets = p.u32_array("targets")?;
+    if targets.len() > 64 {
+        return Err(CheckerError::invalid(
+            "Assignability batches allow at most 64 targets",
+        ));
+    }
+    let mut s = setup(host, p)?;
+    let source = s.resolve_type(p.u32("source")?)?;
+    let targets = targets
+        .into_iter()
+        .map(|target| s.resolve_type(target))
+        .collect::<CheckerResult<Vec<_>>>()?;
+    Ok(Value::Array(
+        targets
+            .into_iter()
+            .map(|target| Value::Bool(s.c().is_type_assignable_to_exported(source, target)))
+            .collect(),
+    ))
+}
+
+pub(crate) fn lintrs_get_contextual_types(
+    host: &dyn CheckerHost,
+    p: &Params,
+) -> CheckerResult<Value> {
+    let locations = p.string_array("locations")?;
+    if locations.len() > 256 {
+        return Err(CheckerError::invalid(
+            "Contextual type batches allow at most 256 locations",
+        ));
+    }
+    let mut s = setup(host, p)?;
+    let nodes = locations
+        .into_iter()
+        .map(|location| s.resolve_node(location))
+        .collect::<CheckerResult<Vec<_>>>()?;
+    let mut out = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let ty = s.c().get_contextual_type_exported(node, ContextFlags::None);
+        out.push(s.opt_type_response(ty)?);
+    }
+    Ok(Value::Array(out))
+}

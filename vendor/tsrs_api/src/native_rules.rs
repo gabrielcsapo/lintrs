@@ -1,3 +1,4 @@
+// Added by lintrs: see vendor/tsrs_api/README.md.
 //! lintrs native rule libraries: shared types and the registered runner.
 //! The runner lives in the `lintrs` facade crate and is installed once per
 //! process; both sides see the same definitions, so pointers between them are
