@@ -64,7 +64,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "${{ github.ref_name }}" --title "lintrs ${{ github.ref_name }}" --generate-notes ./*.tar.gz
+        # Re-running for an existing tag replaces the assets instead of failing.
+        run: |
+          tag="${{ github.ref_name }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" ./*.tar.gz --clobber
+          else
+            gh release create "$tag" --title "lintrs $tag" --generate-notes ./*.tar.gz
+          fi
 
   npm:
     needs: release
@@ -90,8 +97,10 @@ jobs:
             echo "NPM_TOKEN is not configured; skipping npm publish"
             exit 0
           fi
-          for tgz in npm/lintrs-darwin-arm64-*.tgz npm/lintrs-linux-x64-gnu-*.tgz; do
-            [ -e "$tgz" ] && npm publish "$tgz" --provenance --access public
+          # The ./ prefix matters: npm reads a bare "npm/<file>" as a GitHub
+          # "user/repo" spec and tries to clone it.
+          for tgz in ./npm/lintrs-darwin-arm64-*.tgz ./npm/lintrs-linux-x64-gnu-*.tgz; do
+            npm publish "$tgz" --provenance --access public
           done
       - name: Publish lintrs
         env:
@@ -102,4 +111,4 @@ jobs:
             exit 0
           fi
           main=$(ls npm | grep -E '^lintrs-[0-9]+\.[0-9]+\.[0-9]+.*\.tgz$' | head -1)
-          npm publish "npm/$main" --provenance --access public
+          npm publish "./npm/$main" --provenance --access public
