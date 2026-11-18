@@ -89,7 +89,7 @@ jobs:
           pattern: lintrs-npm-*
           merge-multiple: true
           path: npm
-      - name: Publish the platform packages
+      - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -97,18 +97,26 @@ jobs:
             echo "NPM_TOKEN is not configured; skipping npm publish"
             exit 0
           fi
-          # The ./ prefix matters: npm reads a bare "npm/<file>" as a GitHub
-          # "user/repo" spec and tries to clone it.
-          for tgz in ./npm/lintrs-darwin-arm64-*.tgz ./npm/lintrs-linux-x64-gnu-*.tgz; do
-            npm publish "$tgz" --provenance --access public
+          # Versions already on npm are skipped, so a partly published tag can
+          # re-run. A fresh package can stay unreadable for a while after
+          # publishing, so npm's own "already published" refusal counts too.
+          publish() {
+            spec=$(tar -xOzf "$1" package/package.json | node -p 'const p = JSON.parse(require("fs").readFileSync(0, "utf8")); p.name + "@" + p.version')
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "$spec is already published; skipping"
+              return
+            fi
+            if npm publish "$1" --provenance --access public >publish.log 2>&1; then
+              cat publish.log
+              return
+            fi
+            cat publish.log
+            grep -q "cannot publish over the previously published" publish.log || return 1
+            echo "$spec is already published; skipping"
+          }
+          # Platform packages first: @lintrs/cli depends on them. The ./ prefix
+          # matters, since npm reads a bare "npm/<file>" as a GitHub user/repo.
+          # @lintrs/cli packs as lintrs-cli-<version>.tgz.
+          for tgz in ./npm/lintrs-darwin-arm64-*.tgz ./npm/lintrs-linux-x64-gnu-*.tgz ./npm/lintrs-cli-*.tgz; do
+            publish "$tgz"
           done
-      - name: Publish lintrs
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "NPM_TOKEN is not configured; skipping npm publish"
-            exit 0
-          fi
-          main=$(ls npm | grep -E '^lintrs-[0-9]+\.[0-9]+\.[0-9]+.*\.tgz$' | head -1)
-          npm publish "./npm/$main" --provenance --access public

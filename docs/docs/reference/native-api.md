@@ -1,6 +1,6 @@
 # Native rules API
 
-Rust facade: `lintrs::native`. JavaScript facade: `lintrs/native`. Guide:
+Rust facade: `lintrs::native`. JavaScript facade: `@lintrs/cli/native`. Guide:
 [Writing Rust rules](/guide/rust-rules).
 
 ## Rust facade (`lintrs::native`)
@@ -72,7 +72,7 @@ any rule runs) and the rule table.
 - `LINTRS_PROBE` / `probe_address()` — single-copy check: a rule library
   resolves this static in the already-loaded image.
 
-## JavaScript facade (`lintrs/native`)
+## JavaScript facade (`@lintrs/cli/native`)
 
 ```ts
 nativePlugin({

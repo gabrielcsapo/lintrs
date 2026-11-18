@@ -116,7 +116,7 @@ writeFileSync(
   join(main, "package.json"),
   JSON.stringify(
     {
-      name: "lintrs",
+      name: "@lintrs/cli",
       version,
       description: manifest.description,
       license: "MIT",

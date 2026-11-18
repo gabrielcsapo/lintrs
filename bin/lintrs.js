@@ -29,7 +29,7 @@ try {
   console.error(
     `lintrs: the platform package ${packageName} is not installed. ` +
       `Install lintrs with optional dependencies enabled ` +
-      `(npm i -D lintrs). Supported platforms: ${Object.keys(PLATFORMS).join(", ")}.`,
+      `(npm i -D @lintrs/cli). Supported platforms: ${Object.keys(PLATFORMS).join(", ")}.`,
   );
   process.exit(1);
 }
@@ -40,12 +40,18 @@ env.LINTRS_HOST_DIR ??= join(root, "host");
 env.LINTRS_IN_PROCESS_BINDING ??= join(packageDir, "lib", "liblintrs.node");
 env.LINTRS_TYPED_NATIVE ??= "1";
 
-const result = spawnSync(join(packageDir, "bin", "lintrs"), process.argv.slice(2), {
-  stdio: "inherit",
-  env,
-});
+const result = spawnSync(
+  join(packageDir, "bin", "lintrs"),
+  process.argv.slice(2),
+  {
+    stdio: "inherit",
+    env,
+  },
+);
 if (result.error !== undefined) {
-  console.error(`lintrs: failed to start ${packageName}/bin/lintrs: ${result.error.message}`);
+  console.error(
+    `lintrs: failed to start ${packageName}/bin/lintrs: ${result.error.message}`,
+  );
   process.exit(1);
 }
 if (result.signal !== null) process.kill(process.pid, result.signal);

@@ -1,11 +1,11 @@
 # Testing rules
 
-`NativeRuleTester` (from `lintrs/native`) runs `RuleTester`-style cases through
+`NativeRuleTester` (from `@lintrs/cli/native`) runs `RuleTester`-style cases through
 the real lintrs binary, in a temporary project with a tsconfig and an
 `eslint.config.mjs` that imports your plugin. Use it with `node:test`:
 
 ```js
-import { NativeRuleTester } from "lintrs/native";
+import { NativeRuleTester } from "@lintrs/cli/native";
 import { test } from "node:test";
 
 const tester = new NativeRuleTester({

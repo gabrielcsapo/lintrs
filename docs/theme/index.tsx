@@ -9,7 +9,7 @@ import {
   type Suite,
 } from "../components/benchData";
 
-const command = "npx lintrs --config eslint.config.mjs src";
+const command = "npx @lintrs/cli --config eslint.config.mjs src";
 
 // Illustrative output in lintrs's default `unix` format (ESLint's unix
 // formatter). The last line comes from the Rust rule in the guide.

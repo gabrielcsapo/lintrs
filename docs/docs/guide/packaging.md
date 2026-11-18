@@ -1,9 +1,9 @@
 # Packaging Rust rules
 
-Wrap a crate's rules with `nativePlugin` (from `lintrs/native`):
+Wrap a crate's rules with `nativePlugin` (from `@lintrs/cli/native`):
 
 ```js
-import { nativePlugin } from "lintrs/native";
+import { nativePlugin } from "@lintrs/cli/native";
 
 const demo = nativePlugin({
   name: "demo",

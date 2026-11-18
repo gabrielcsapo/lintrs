@@ -1,4 +1,4 @@
-import { nativePlugin } from "lintrs/native";
+import { nativePlugin } from "@lintrs/cli/native";
 
 export default nativePlugin({
   name: "example",

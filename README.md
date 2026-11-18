@@ -17,7 +17,7 @@ rules in JavaScript or Rust. lintrs ships no rules of its own.
 Node ≥ 24 on macOS arm64 or Linux x64:
 
 ```sh
-npm i -D lintrs
+npm i -D @lintrs/cli
 npx lintrs --config eslint.config.mjs src
 ```
 

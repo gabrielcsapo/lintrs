@@ -10,7 +10,7 @@ the right prebuilt binary for your platform.
 ## 1. Install
 
 ```sh
-npm i -D lintrs
+npm i -D @lintrs/cli
 ```
 
 ## 2. Lint

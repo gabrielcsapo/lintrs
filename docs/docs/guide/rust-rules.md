@@ -62,7 +62,7 @@ crate-type = ["cdylib"]
 <!-- example: examples/rules/typescript-rust/index.mjs -->
 
 ```js title="index.mjs"
-import { nativePlugin } from "lintrs/native";
+import { nativePlugin } from "@lintrs/cli/native";
 
 export default nativePlugin({
   name: "example",

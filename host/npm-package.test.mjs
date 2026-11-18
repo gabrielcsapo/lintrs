@@ -51,11 +51,12 @@ test(
       .trim()
       .split("\n")
       .map(line => line.trim());
-    const mainTgz = tgzs.find(file => /lintrs-\d/u.test(file));
+    const mainTgz = tgzs.find(file => /lintrs-cli-\d/u.test(file));
     const platformTgz = tgzs.find(
       file => /lintrs-\w+-arm64|lintrs-\w+-x64/u.test(file) && file !== mainTgz,
     );
     assert.ok(mainTgz && platformTgz, `unexpected pack output: ${tgzs}`);
+    const platformPackage = `@lintrs/${platformKey()}`;
 
     const dir = mkdtempSync(join(tmpdir(), "lintrs-npm-"));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -95,13 +96,14 @@ test(
     );
     if (
       installed.status !== 0 ||
-      !existsSync(join(dir, "node_modules/lintrs/package.json"))
+      !existsSync(join(dir, "node_modules/@lintrs/cli/package.json"))
     ) {
       rmSync(join(dir, "node_modules"), { recursive: true, force: true });
       rmSync(join(dir, "package-lock.json"), { force: true });
       mkdirSync(join(dir, "node_modules"), { recursive: true });
       for (const entry of readdirSync(join(root, "node_modules"))) {
-        if (entry.startsWith(".") || entry === "lintrs") continue;
+        if (entry.startsWith(".") || entry === "lintrs" || entry === "@lintrs")
+          continue;
         const source = join(root, "node_modules", entry);
         try {
           symlinkSync(source, join(dir, "node_modules", entry), "dir");
@@ -118,28 +120,25 @@ test(
         ]);
         if (untar.status !== 0) assert.fail(untar.stderr);
       };
-      unpack(mainTgz, join(dir, "node_modules/lintrs"));
+      unpack(mainTgz, join(dir, "node_modules/@lintrs/cli"));
       // npm install links each package's bin into node_modules/.bin; do the
       // same, or `npx lintrs` finds no command (fresh CI runners always take
       // this path, since their npm cache is empty).
       const bins = JSON.parse(
-        readFileSync(join(dir, "node_modules/lintrs/package.json"), "utf8"),
+        readFileSync(
+          join(dir, "node_modules/@lintrs/cli/package.json"),
+          "utf8",
+        ),
       ).bin;
       mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
       for (const [name, target] of Object.entries(bins)) {
-        chmodSync(join(dir, "node_modules/lintrs", target), 0o755);
+        chmodSync(join(dir, "node_modules/@lintrs/cli", target), 0o755);
         symlinkSync(
-          join("..", "lintrs", target),
+          join("..", "@lintrs/cli", target),
           join(dir, "node_modules/.bin", name),
         );
       }
-      unpack(
-        platformTgz,
-        join(
-          dir,
-          `node_modules/@lintrs/${{ "darwin-arm64": "darwin-arm64", "linux-x64-gnu": "linux-x64-gnu" }[platformKey()]}`,
-        ),
-      );
+      unpack(platformTgz, join(dir, `node_modules/${platformPackage}`));
       installed = { status: 0, stdout: "", stderr: "symlink fallback" };
     }
 
@@ -165,7 +164,7 @@ test(
     assert.equal(lint.status, 1, lint.stderr);
     assert.match(lint.stdout, /no-debugger/u);
 
-    // (2) A prebuilt native rule package consumed via `lintrs/native`.
+    // (2) A prebuilt native rule package consumed via `@lintrs/cli/native`.
     const key = platformKey();
     const rulesPackage = join(dir, `node_modules/example-rules-${key}`);
     const built = command(
@@ -181,7 +180,7 @@ test(
     if (built.status !== 0) assert.fail(built.stderr);
     writeFileSync(
       join(dir, "eslint.config.mjs"),
-      `import { nativePlugin } from "lintrs/native";
+      `import { nativePlugin } from "@lintrs/cli/native";
 const example = nativePlugin({ name: "example", rules: ["call-returns-union"],
   prebuilt: { ${JSON.stringify(key)}: "example-rules-${key}" } });
 export default [{ files: ["**/*.ts"], plugins: { example },
@@ -204,7 +203,11 @@ pick(true);
     assert.match(nativeLint.stdout, /call-returns-union/u);
 
     // (3) Removing the platform package yields a clear error.
-    rmSync(join(dir, "node_modules/@lintrs"), { recursive: true, force: true });
+    // Only the platform package: @lintrs/cli lives in the same scope.
+    rmSync(join(dir, `node_modules/${platformPackage}`), {
+      recursive: true,
+      force: true,
+    });
     const missing = command("npx", ["lintrs", "--version"], {
       cwd: dir,
       env,
