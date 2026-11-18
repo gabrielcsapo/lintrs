@@ -35,6 +35,21 @@ jobs:
       - run: npm run format:check
       - run: cargo fetch --locked
       - run: cargo test --locked -p lintrs
+      # The native layout builds from a prepared tree outside the workspace,
+      # so rust-cache (which keeps ./target) never sees it and tsrs compiled
+      # from scratch three times per run: the release binary, the
+      # prefer-dynamic libraries and the extension tests. Cache those target
+      # directories; caches are saved from main only, and PRs restore them.
+      - name: Restore the native build cache
+        id: native-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /tmp/lintrs-native-build/target
+            /tmp/lintrs-native-build/target-native
+            /tmp/lintrs-native-build/tsrs-source/target
+          key: native-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'type-api/**', 'scripts/build-native.mjs') }}
+          restore-keys: native-${{ runner.os }}-
       - name: Prepare patched tsrs API and build the native layout
         run: |
           node scripts/build-native.mjs --build /tmp/lintrs-native-build \
@@ -51,6 +66,15 @@ jobs:
           cargo test --offline \
             --manifest-path /tmp/lintrs-native-build/tsrs-source/Cargo.toml \
             -p tsrs_api lintrs_
+      - name: Save the native build cache
+        if: github.event_name == 'push' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /tmp/lintrs-native-build/target
+            /tmp/lintrs-native-build/target-native
+            /tmp/lintrs-native-build/tsrs-source/target
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Host tests (eager typed native)
         env:
           LINTRS_TYPED_NATIVE: "1"

@@ -15,7 +15,7 @@
   "scripts": {
     "prepare:native": "node type-api/prepare.mjs --output /tmp/lintrs-native-build",
     "test:rust": "cargo test --locked",
-    "test:host": "node --conditions=@typescript/source --experimental-transform-types --test --test-concurrency=1 host/*.test.mjs",
+    "test:host": "node --conditions=@typescript/source --experimental-transform-types --test host/*.test.mjs",
     "pretest:host": "cargo build --locked",
     "dist": "node scripts/dist.mjs",
     "build:native": "node scripts/build-native.mjs",
