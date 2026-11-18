@@ -15,9 +15,15 @@ on:
 
 jobs:
   test:
+    # One job per OS and typed-native mode, so the two host-test runs happen
+    # side by side. Both modes need the native layout; the remaining checks
+    # run once per OS, split between the two jobs to keep them even.
+    name: test (${{ matrix.os }}, ${{ matrix.mode }})
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        mode: [eager, lazy]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +34,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: rustfmt, clippy
+      # Each mode builds different things (only eager runs clippy, only lazy
+      # builds the extension tests), so each keeps its own cache.
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.mode }}
       - run: npm ci
-      - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: npm run format:check
+      - if: matrix.mode == 'eager'
+        run: cargo fmt --check
+      - if: matrix.mode == 'eager'
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - if: matrix.mode == 'eager'
+        run: npm run format:check
       - run: cargo fetch --locked
-      - run: cargo test --locked -p lintrs
+      - if: matrix.mode == 'eager'
+        run: cargo test --locked -p lintrs
       - name: Build the native layout
         run: |
           node scripts/build-native.mjs --out "$PWD/target/lintrs-native"
@@ -42,31 +56,29 @@ jobs:
           test -f target/lintrs-native/lib/liblintrs.node
           test -f target/lintrs-native/lib/liblintrs.${{ runner.os == 'macOS' && 'dylib' || 'so' }}
       - name: Lint the typed-native build
+        if: matrix.mode == 'eager'
         run: cargo clippy --locked --all-targets --features typed-native -p lintrs -- -D warnings
       - name: Run the tsrs_api extension tests
+        if: matrix.mode == 'lazy'
         run: cargo test --locked -p tsrs_api lintrs_
-      - name: Host tests (eager typed native)
+      # The host reads each flag as on only when it is exactly "1", so the
+      # other mode's flags are left empty.
+      - name: Host tests (${{ matrix.mode == 'eager' && 'eager typed native' || 'lazy objects' }})
         env:
           LINTRS_TYPED_NATIVE: "1"
           LINTRS_IN_PROCESS_BINDING: ${{ github.workspace }}/target/lintrs-native/lib/liblintrs.node
           LINTRS_BINARY: ${{ github.workspace }}/target/lintrs-native/bin/lintrs
           LINTRS_TEST_BINARY: ${{ github.workspace }}/target/lintrs-native/bin/lintrs
-          LINTRS_COMPACT_DECLARATIONS: "1"
-          LINTRS_FUSED_SYMBOLS: "1"
-          LINTRS_TRUE_BULK: "1"
-          LINTRS_CONTEXTUAL_BATCH: "1"
-        run: npm run test:host
-      - name: Host tests (lazy objects)
-        env:
-          LINTRS_TYPED_NATIVE: "1"
-          LINTRS_IN_PROCESS_BINDING: ${{ github.workspace }}/target/lintrs-native/lib/liblintrs.node
-          LINTRS_BINARY: ${{ github.workspace }}/target/lintrs-native/bin/lintrs
-          LINTRS_TEST_BINARY: ${{ github.workspace }}/target/lintrs-native/bin/lintrs
-          LINTRS_LAZY_OBJECTS: "1"
-          LINTRS_LAZY_PREFETCH: "1"
-          LINTRS_ADAPTIVE_FACTS: "1"
+          LINTRS_COMPACT_DECLARATIONS: ${{ matrix.mode == 'eager' && '1' || '' }}
+          LINTRS_FUSED_SYMBOLS: ${{ matrix.mode == 'eager' && '1' || '' }}
+          LINTRS_TRUE_BULK: ${{ matrix.mode == 'eager' && '1' || '' }}
+          LINTRS_CONTEXTUAL_BATCH: ${{ matrix.mode == 'eager' && '1' || '' }}
+          LINTRS_LAZY_OBJECTS: ${{ matrix.mode == 'lazy' && '1' || '' }}
+          LINTRS_LAZY_PREFETCH: ${{ matrix.mode == 'lazy' && '1' || '' }}
+          LINTRS_ADAPTIVE_FACTS: ${{ matrix.mode == 'lazy' && '1' || '' }}
         run: npm run test:host
       - name: Build and smoke the distribution
+        if: matrix.mode == 'lazy'
         run: |
           npm run dist
           dir=$(node -p 'const fs=require("fs");JSON.parse(fs.readFileSync("dist/"+fs.readdirSync("dist").find(f=>f.endsWith(".json")),"utf8")).directory')
