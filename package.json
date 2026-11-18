@@ -13,14 +13,13 @@
     "url": "https://github.com/gabrielcsapo/lintrs"
   },
   "scripts": {
-    "prepare:native": "node type-api/prepare.mjs --output /tmp/lintrs-native-build",
     "test:rust": "cargo test --locked",
     "test:host": "node --conditions=@typescript/source --experimental-transform-types --test host/*.test.mjs",
     "pretest:host": "cargo build --locked",
     "dist": "node scripts/dist.mjs",
     "build:native": "node scripts/build-native.mjs",
-    "format": "prettier --write \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\" \"docs/**/*.{md,mdx,ts,tsx,css}\" \"docs/*.{ts,json}\"",
-    "format:check": "prettier --check \"host/**/*.mjs\" \"type-api/*.mjs\" \"scripts/*.mjs\" \"docs/**/*.{md,mdx,ts,tsx,css}\" \"docs/*.{ts,json}\"",
+    "format": "prettier --write \"host/**/*.mjs\" \"scripts/*.mjs\" \"docs/**/*.{md,mdx,ts,tsx,css}\" \"docs/*.{ts,json}\"",
+    "format:check": "prettier --check \"host/**/*.mjs\" \"scripts/*.mjs\" \"docs/**/*.{md,mdx,ts,tsx,css}\" \"docs/*.{ts,json}\"",
     "docs:dev": "npm --prefix docs run dev",
     "docs:build": "npm --prefix docs run build",
     "bench": "node bench/setup.mjs && node bench/run.mjs",

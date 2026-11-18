@@ -1,3 +1,4 @@
+// Modified by lintrs: see vendor/tsrs_api/README.md.
 // Go `getSourceFileSymbolIndex` (tsc/internal/api/session.go): the file-owned (non-transient) binder
 // symbols reachable from a source file's nodes, locals, global exports and pattern ambient modules,
 // plus their parents, export symbols, members and exports. Used to resolve file-owned symbol
@@ -6,7 +7,7 @@
 // Go memoizes the full map on the source file; the port has no per-file data slot, so it searches the
 // same set and stops at the first match (no allocation beyond the visited set).
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use tsrs_ast::{Node, SourceFile, Symbol, SymbolFlags};
 use tsrs_core::P;
 
@@ -15,6 +16,7 @@ struct Search {
     id: u64,
     seen: FxHashSet<u64>,
     found: Option<P<Symbol>>,
+    collected: Option<FxHashMap<u64, P<Symbol>>>,
 }
 
 impl Search {
@@ -35,7 +37,8 @@ impl Search {
             // Go asserts this; a foreign symbol is never part of this file's index.
             return false;
         }
-        if id == self.id {
+        if let Some(index) = self.collected.as_mut() { index.insert(id, symbol); }
+        if id == self.id && self.collected.is_none() {
             self.found = Some(symbol);
             return true;
         }
@@ -86,7 +89,7 @@ impl Search {
 
 /// The file-owned symbol with `id` in `file`, if any.
 pub(crate) fn source_file_symbol(file: P<SourceFile>, id: u64) -> Option<P<Symbol>> {
-    let mut search = Search { file, id, seen: FxHashSet::default(), found: None };
+    let mut search = Search { file, id, seen: FxHashSet::default(), found: None, collected: None };
     let root = file.as_node();
     if search.visit(root) {
         return search.found;
@@ -104,4 +107,25 @@ pub(crate) fn source_file_symbol(file: P<SourceFile>, id: u64) -> Option<P<Symbo
         }
     }
     search.found
+}
+
+/// Full index using the same visitor and ownership checks as the original single-ID search.
+pub(crate) fn build_source_file_symbol_index(file: P<SourceFile>) -> FxHashMap<u64, P<Symbol>> {
+    let mut search = Search {
+        file,
+        id: 0,
+        seen: FxHashSet::default(),
+        found: None,
+        collected: Some(FxHashMap::default()),
+    };
+    search.visit(file.as_node());
+    if let Some(globals) = file.global_exports() {
+        for symbol in globals.values() {
+            search.add(Some(symbol));
+        }
+    }
+    for module in file.pattern_ambient_modules() {
+        search.add(Some(module.symbol));
+    }
+    search.collected.unwrap_or_default()
 }

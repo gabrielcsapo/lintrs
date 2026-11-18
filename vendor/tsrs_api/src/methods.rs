@@ -1,3 +1,4 @@
+// Modified by lintrs: see vendor/tsrs_api/README.md.
 // Pinned method inventory: every `Method` constant in microsoft/TypeScript
 // tsc/internal/api/proto.go @ b85298b6a81f772d080b0455de0ca9d744cd6fd6 (172 entries, same order).
 // `status` is the honest implementation state in tsrs; it must only become `Supported` when a real
@@ -194,6 +195,9 @@ pub const METHODS: [MethodInfo; 172] = [
 ];
 
 pub fn method_info(name: &str) -> Option<&'static MethodInfo> {
+    if name == "lintrsIsTypeAssignableToManyNative" {
+        return Some(&MethodInfo { name: "lintrsIsTypeAssignableToManyNative", owner: Owner::Checker, status: Status::Partial });
+    }
     METHODS.iter().find(|m| m.name == name)
 }
 // Go `unmarshalers` (proto.go): the params type each method decodes into, for Go's error text
@@ -374,5 +378,8 @@ pub const PARAMS_TYPES: &[(&str, Option<&str>)] = &[
 ];
 
 pub fn params_type(method: &str) -> Option<&'static str> {
+    if method == "lintrsIsTypeAssignableToManyNative" {
+        return Some("LintrsAssignabilityBatchParams");
+    }
     PARAMS_TYPES.iter().find(|(m, _)| *m == method).and_then(|(_, t)| *t)
 }

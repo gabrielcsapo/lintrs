@@ -6,7 +6,7 @@
 //   lib/liblintrs.node    — thin Node-API wrapper; the in-process binding
 //   sdk/deps/*.rlib      — metadata for compiling rule crates via
 //                          --extern lintrs=<lib>/liblintrs.* -L dependency=<sdk>/deps
-// Usage: node scripts/build-native.mjs [--build <prepared dir>] [--out <dir>]
+// Usage: node scripts/build-native.mjs [--out <dir>]
 
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -18,9 +18,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -28,10 +26,6 @@ const option = name => {
   const index = args.indexOf(name);
   return index === -1 ? undefined : args[index + 1];
 };
-// prepare.mjs requires its output outside the repository.
-const buildDir = resolve(
-  option("--build") ?? join(tmpdir(), "lintrs-native-build"),
-);
 const outDir = resolve(option("--out") ?? join(root, "target/lintrs-native"));
 const darwin = process.platform === "darwin";
 const libraryName = darwin ? "liblintrs.dylib" : "liblintrs.so";
@@ -47,16 +41,7 @@ function run(command, commandArgs, options = {}) {
     throw new Error(`${command} ${commandArgs.join(" ")} failed`);
 }
 
-// prepare.mjs is idempotent: it refreshes the lintrs sources and the injected
-// tsrs_api, so always run it to keep the prepared tree current.
-console.log(`[build-native] preparing ${buildDir}`);
-run(
-  process.execPath,
-  [join(root, "type-api/prepare.mjs"), "--output", buildDir],
-  { cwd: root },
-);
-
-const manifest = join(buildDir, "Cargo.toml");
+const manifest = join(root, "Cargo.toml");
 // The CLI binary keeps a statically linked standard library; only the dylib
 // half links libstd dynamically so rule libraries share everything.
 console.log("[build-native] cargo build --release -p lintrs (binary)");
@@ -64,7 +49,7 @@ run(
   "cargo",
   [
     "build",
-    "--offline",
+    "--locked",
     "--release",
     "--manifest-path",
     manifest,
@@ -76,7 +61,9 @@ run(
   { cwd: root },
 );
 
-const nativeTarget = join(buildDir, "target-native");
+// A separate target directory: RUSTFLAGS differ, and sharing target/ would
+// make the two builds invalidate each other.
+const nativeTarget = join(root, "target/native");
 const preferDynamic = "-C prefer-dynamic";
 const rustflags = darwin
   ? `${preferDynamic} -C link-args=-Wl,-undefined,dynamic_lookup`
@@ -88,7 +75,7 @@ run(
   "cargo",
   [
     "build",
-    "--offline",
+    "--locked",
     "--release",
     "--manifest-path",
     manifest,
@@ -108,7 +95,7 @@ run(
   },
 );
 
-const release = join(buildDir, "target/release");
+const release = join(root, "target/release");
 const nativeRelease = join(nativeTarget, "release");
 const deps = join(nativeRelease, "deps");
 

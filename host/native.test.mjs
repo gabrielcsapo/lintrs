@@ -17,6 +17,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
+import { tsrsSdkRoot } from "./type-services/sdk.mjs";
+
 import { platformKey } from "./native/build.mjs";
 import { NativeRuleTester } from "./native/index.mjs";
 
@@ -30,30 +32,7 @@ const skipNative =
   !haveNative && process.env.CI === undefined ? "native build missing" : false;
 const nodeDir = dirname(process.execPath);
 
-function tsrsSdk() {
-  const target = /^host: (.+)$/mu.exec(
-    spawnSync("rustc", ["-vV"], { encoding: "utf8" }).stdout,
-  )?.[1];
-  const metadata = JSON.parse(
-    spawnSync(
-      "cargo",
-      [
-        "metadata",
-        "--locked",
-        "--offline",
-        "--filter-platform",
-        target,
-        "--format-version",
-        "1",
-      ],
-      { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
-    ).stdout,
-  );
-  const dep = metadata.packages.find(item => item.name === "tsrs_api");
-  return resolve(dirname(dep.manifest_path), "../../npm/tsrs");
-}
-
-const sdk = haveNative ? tsrsSdk() : undefined;
+const sdk = haveNative ? tsrsSdkRoot(root) : undefined;
 
 // A temp lint project: package.json + tsconfig + the repo's runtime deps
 // linked in, plus a generated eslint.config.mjs.

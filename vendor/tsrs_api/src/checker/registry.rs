@@ -1,3 +1,4 @@
+// Modified by lintrs: see vendor/tsrs_api/README.md.
 // Port of the registries in Go `snapshotData` / `projectRegistryData` (tsc/internal/api/session.go).
 //
 // Symbol ids come from `tsrs_ast::get_symbol_id` (a process-wide counter, like Go `ast.GetSymbolId`), so
@@ -31,6 +32,9 @@ struct ProjectRegistry {
 struct RegistryState {
     released: bool,
     symbols: FxHashMap<u64, P<Symbol>>,
+    file_symbols: FxHashMap<usize, FxHashMap<u64, P<Symbol>>>,
+    compact_declaration_positions: FxHashMap<u64, std::sync::Arc<tsrs_api_codec::PositionMap>>,
+    checker_gates: FxHashMap<usize, std::sync::Arc<super::lease::ApiCheckerGatePin>>,
     // Go `symbolCanonicalProjects`: first writer wins.
     symbol_projects: FxHashMap<u64, String>,
     projects: FxHashMap<String, ProjectRegistry>,
@@ -55,10 +59,14 @@ impl CheckerRegistry {
         let mut st = self.lock();
         st.released = true;
         st.symbols = FxHashMap::default();
+        st.file_symbols = FxHashMap::default();
+        st.compact_declaration_positions = FxHashMap::default();
         st.symbol_projects = FxHashMap::default();
         st.projects = FxHashMap::default();
+        let checker_gates = std::mem::take(&mut st.checker_gates);
         let retained = std::mem::take(&mut st.retained);
         drop(st);
+        drop(checker_gates);
         for snapshot in retained {
             snapshot.deref();
         }
@@ -202,5 +210,68 @@ impl CheckerRegistry {
     /// Checker that produced the project's registered types/signatures (0 if none yet).
     pub fn project_checker_id(&self, project: &str) -> u32 {
         self.lock().projects.get(project).map_or(0, |r| r.checker_id)
+    }
+}
+
+impl CheckerRegistry {
+    pub(crate) fn cached_file_symbol(
+        &self,
+        file: P<tsrs_ast::SourceFile>,
+        id: u64,
+    ) -> CheckerResult<Option<P<Symbol>>> {
+        let mut state = self.lock();
+        Self::check_live(&state)?;
+        if !file.is_bound() {
+            // An unbound file may acquire binder symbols later. Do not retain an incomplete index.
+            drop(state);
+            return Ok(super::symbol_index::source_file_symbol(file, id));
+        }
+        let index = state
+            .file_symbols
+            .entry(file.as_node().addr())
+            .or_insert_with(|| super::symbol_index::build_source_file_symbol_index(file));
+        Ok(index.get(&id).copied())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn file_symbol_cache_count(&self) -> usize {
+        self.lock().file_symbols.len()
+    }
+}
+
+impl CheckerRegistry {
+    pub(crate) fn compact_declaration_positions(
+        &self,
+        file: P<tsrs_ast::SourceFile>,
+    ) -> CheckerResult<std::sync::Arc<tsrs_api_codec::PositionMap>> {
+        let mut state = self.lock();
+        Self::check_live(&state)?;
+        let id = tsrs_ast::get_node_id(file.as_node()).0;
+        let positions = state
+            .compact_declaration_positions
+            .entry(id)
+            .or_insert_with(|| {
+                std::sync::Arc::new(tsrs_api_codec::PositionMap::compute(file.text()))
+            });
+        Ok(std::sync::Arc::clone(positions))
+    }
+}
+
+impl CheckerRegistry {
+    pub(crate) fn acquire_checker_gate(
+        &self,
+        program: &'static tsrs_compiler::Program,
+    ) -> CheckerResult<super::lease::ApiCheckerLease> {
+        let pin = {
+            let mut state = self.lock();
+            Self::check_live(&state)?;
+            std::sync::Arc::clone(
+                state
+                    .checker_gates
+                    .entry(std::ptr::from_ref(program) as usize)
+                    .or_insert_with(|| std::sync::Arc::new(super::lease::pin(program))),
+            )
+        };
+        pin.acquire()
     }
 }

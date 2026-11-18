@@ -340,8 +340,8 @@ unsafe fn load_library(path: &str) -> Result<&'static RulesBundle, String> {
 
 /// The runner installed into the tsrs dispatch. Builds a checker-bound
 /// context per rule and walks the file once, dispatching on `listens_to`.
-/// `tsrs_api::native_rules` is injected by type-api/prepare.mjs, so this only
-/// exists in prepared builds (`typed-native`).
+/// `tsrs_api::native_rules` is lintrs' addition to the vendored tsrs_api
+/// (vendor/tsrs_api); the runner is only built with `typed-native`.
 #[cfg(feature = "typed-native")]
 unsafe fn run(
     call: &mut tsrs_api::native_rules::LintrsNativeCall<'_>,

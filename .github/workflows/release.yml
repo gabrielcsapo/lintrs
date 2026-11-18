@@ -30,9 +30,9 @@ jobs:
       - run: npm ci
       - run: cargo fetch --locked
       - name: Build the native layout
-        run: node scripts/build-native.mjs --build /tmp/lintrs-native-build --out "$PWD/target/lintrs-native"
+        run: node scripts/build-native.mjs --out "$PWD/target/lintrs-native"
       - name: Build the distribution
-        run: npm run dist -- --build /tmp/lintrs-native-build
+        run: npm run dist
       - name: Smoke the distribution
         run: |
           dir=$(node -p 'const fs=require("fs");JSON.parse(fs.readFileSync("dist/"+fs.readdirSync("dist").find(f=>f.endsWith(".json")),"utf8")).directory')

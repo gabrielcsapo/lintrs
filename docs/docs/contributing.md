@@ -13,15 +13,12 @@ npm run build:native
 
 `npm run build:native` (`scripts/build-native.mjs`):
 
-1. runs `type-api/prepare.mjs` into a scratch build directory (`--build`,
-   default `$TMPDIR/lintrs-native-build`): it copies the pinned `tsrs_api`
-   crate, applies the checked-in extensions, verifies every patch anchor, and
-   leaves Cargo's checkout untouched;
-2. builds the release binary, the shared `liblintrs` and the `liblintrs.node`
-   wrapper;
-3. fixes install names and rpaths (`@rpath` + `@loader_path` on macOS,
+1. builds the release binary, the shared `liblintrs` and the
+   `liblintrs.node` wrapper (the shared half in `target/native`, with
+   `-C prefer-dynamic`);
+2. fixes install names and rpaths (`@rpath` + `@loader_path` on macOS,
    `$ORIGIN` on Linux) and copies the shared libstd;
-4. stages:
+3. stages:
 
 ```txt
 target/lintrs-native/
@@ -32,29 +29,36 @@ target/lintrs-native/
   sdk/deps/                   # .rlib metadata + proc-macro dylibs
 ```
 
-Keep the build directory while developing: the binary finds host modules
-through it. `sdk/` is staged for development only; releases ship it as the
+A binary built from the checkout finds the host modules in `host/`. `sdk/` is staged for development only; releases ship it as the
 separate `lintrs-sdk-*` tarball.
 
 Build a relocatable distribution (`dist/lintrs-<version>-<target>/` and its
 `.tar.gz`):
 
 ```sh
-npm run dist -- --build /tmp/lintrs-native-build
+npm run dist
 ```
 
 ## Tests
 
 ```sh
 cargo test --locked -p lintrs
+cargo test --locked -p tsrs_api lintrs_   # lintrs' tsrs_api extensions
 npm run test:host   # `pretest:host` runs `cargo build --locked` first
 ```
 
 Host fixtures compare unchanged rules against ESLint: messages, fixes,
 suggestions, suppressions and UTF-16 locations. Guards keep ESLint's lint
-engine and the JS TypeScript checker out of the native host. The prepared API
-crate has regression tests for the query, symbol-index and checker-lifecycle
-extensions.
+engine and the JS TypeScript checker out of the native host. The `lintrs_`
+tests in `vendor/tsrs_api` cover the query, symbol-index and
+checker-lifecycle extensions.
+
+## The vendored tsrs_api
+
+`vendor/tsrs_api` is tsrs's `tsrs_api` crate with lintrs' extensions, which
+need its crate-private checker internals. The other tsrs crates are ordinary
+git dependencies. Its README covers what changed and how to update tsrs; the
+code keeps upstream's formatting, so `cargo fmt` skips it.
 
 Native binding tests run in two mutually exclusive modes:
 

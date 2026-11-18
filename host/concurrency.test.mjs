@@ -12,8 +12,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
+
+import { tsrsSdkRoot } from "./type-services/sdk.mjs";
 
 import { workerCount } from "./parallel.mjs";
 
@@ -24,30 +26,7 @@ const haveNative = existsSync(nativeBin) && existsSync(nativeBinding);
 const skipNative =
   !haveNative && process.env.CI === undefined ? "native build missing" : false;
 
-function tsrsSdk() {
-  const target = /^host: (.+)$/mu.exec(
-    spawnSync("rustc", ["-vV"], { encoding: "utf8" }).stdout,
-  )?.[1];
-  const metadata = JSON.parse(
-    spawnSync(
-      "cargo",
-      [
-        "metadata",
-        "--locked",
-        "--offline",
-        "--filter-platform",
-        target,
-        "--format-version",
-        "1",
-      ],
-      { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
-    ).stdout,
-  );
-  const dep = metadata.packages.find(item => item.name === "tsrs_api");
-  return resolve(dirname(dep.manifest_path), "../../npm/tsrs");
-}
-
-const sdk = haveNative ? tsrsSdk() : undefined;
+const sdk = haveNative ? tsrsSdkRoot(root) : undefined;
 
 test("workerCount follows ESLint's heuristic", () => {
   assert.equal(workerCount(0, "auto", 8), 1);
