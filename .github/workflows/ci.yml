@@ -40,16 +40,19 @@ jobs:
       # from scratch three times per run: the release binary, the
       # prefer-dynamic libraries and the extension tests. Cache those target
       # directories; caches are saved from main only, and PRs restore them.
+      # The marker file comes too: prepare.mjs only writes into a directory
+      # it recognises as an earlier build of this checkout.
       - name: Restore the native build cache
         id: native-cache
         uses: actions/cache/restore@v4
         with:
           path: |
+            /tmp/lintrs-native-build/lintrs-build.json
             /tmp/lintrs-native-build/target
             /tmp/lintrs-native-build/target-native
             /tmp/lintrs-native-build/tsrs-source/target
-          key: native-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'type-api/**', 'scripts/build-native.mjs') }}
-          restore-keys: native-${{ runner.os }}-
+          key: native-v2-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'type-api/**', 'scripts/build-native.mjs') }}
+          restore-keys: native-v2-${{ runner.os }}-
       - name: Prepare patched tsrs API and build the native layout
         run: |
           node scripts/build-native.mjs --build /tmp/lintrs-native-build \
@@ -71,6 +74,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
+            /tmp/lintrs-native-build/lintrs-build.json
             /tmp/lintrs-native-build/target
             /tmp/lintrs-native-build/target-native
             /tmp/lintrs-native-build/tsrs-source/target
