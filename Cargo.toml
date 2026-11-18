@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [".", "lintrs-node"]
+members = [".", "lintrs-node", "vendor/tsrs_api"]
 
 [workspace.package]
 edition = "2024"
@@ -15,6 +15,7 @@ oxc_allocator = "0.152.0"
 oxc_parser = "0.152.0"
 oxc_span = "0.152.0"
 regex = "1.13.1"
+rustc-hash = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tempfile = "3.27.0"
@@ -27,6 +28,21 @@ tsrs_checker = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd
 tsrs_scanner = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
 tsrs_compiler = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
 tsrs_vfs = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+# Used by the vendored tsrs_api (vendor/tsrs_api); bump with the rest.
+tsrs_diagnostics = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+tsrs_module = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+tsrs_astnav = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+tsrs_ls = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+tsrs_lsproto = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+tsrs_project = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+tsrs_printer = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+tsrs_api_codec = { git = "https://github.com/oxc-project/tsrs", rev = "c21a36ef2dd2c8ec8fdfcc8ac32fd98cd5bd8ef5" }
+
+# tsrs_api is vendored with lintrs' extensions (vendor/tsrs_api/README.md).
+# The patch also redirects tsrs's own crates that depend on it, so the build
+# holds one tsrs_api.
+[patch."https://github.com/oxc-project/tsrs"]
+tsrs_api = { path = "vendor/tsrs_api" }
 
 [package]
 name = "lintrs"
