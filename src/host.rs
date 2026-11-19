@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, bail};
 use oxc_allocator::Allocator;
-use oxc_parser::Parser;
+use oxc_parser::{ParseOptions, Parser};
 use oxc_span::SourceType;
 use serde::Deserialize;
 
@@ -48,7 +48,12 @@ fn source_comments(file_path: &Path, text: &str) -> anyhow::Result<Vec<Comment>>
     {
         crate::languages::graphql::bridge::comments(text)
     } else {
-        let parsed = Parser::new(&allocator, text, SourceType::from_path(file_path)?).parse();
+        let parsed = Parser::new(&allocator, text, SourceType::from_path(file_path)?)
+            .with_options(ParseOptions {
+                allow_return_outside_function: true,
+                ..ParseOptions::default()
+            })
+            .parse();
         if !parsed.diagnostics.is_empty() {
             bail!(
                 "cannot finalize {}: Oxc rejected the source",
@@ -221,6 +226,7 @@ pub fn run(
     config: &Path,
     paths: &[PathBuf],
     quiet: bool,
+    require_native: bool,
     json: bool,
     concurrency: &str,
 ) -> anyhow::Result<bool> {
@@ -236,6 +242,9 @@ pub fn run(
         .arg(config);
     if quiet {
         command.arg("--quiet");
+    }
+    if require_native {
+        command.arg("--require-native");
     }
     command.args(["--concurrency", concurrency]);
     if json {
@@ -275,6 +284,17 @@ mod tests {
     use std::path::PathBuf;
 
     use super::select_host_dir;
+
+    #[test]
+    fn comments_accept_top_level_returns_from_typescript_parser() {
+        let comments = super::source_comments(
+            std::path::Path::new("query.ts"),
+            "if (!inputs.length) return; // guarded\nrun(inputs);",
+        )
+        .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].value, " guarded");
+    }
 
     #[test]
     fn host_dir_prefers_candidates_in_order() {

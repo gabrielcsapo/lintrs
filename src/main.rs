@@ -26,6 +26,9 @@ struct Cli {
     /// Run only error-level rules and report only errors.
     #[arg(long)]
     quiet: bool,
+    /// Fail if an enabled rule needs the JavaScript rule runtime.
+    #[arg(long)]
+    require_native: bool,
     /// Lint in parallel worker threads: a positive count, `auto`, or `off`.
     #[arg(long, value_name = "n|auto|off", default_value = "off", allow_hyphen_values = true, value_parser = parse_concurrency)]
     concurrency: Concurrency,
@@ -81,6 +84,7 @@ fn run(cli: &Cli) -> anyhow::Result<bool> {
         &config_path,
         &cli.paths,
         cli.quiet,
+        cli.require_native,
         matches!(cli.format, Format::Json),
         &cli.concurrency.as_host_arg(),
     )

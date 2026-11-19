@@ -1,8 +1,3 @@
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const ts = require("typescript");
-
 export const displayParts = text =>
   text === undefined ? undefined : [{ text, kind: "text" }];
 export const docTags = tags =>
@@ -18,6 +13,7 @@ export const docTags = tags =>
 // original closures.
 export function createWrapping(ctx) {
   const {
+    ts,
     sdk,
     project,
     flags,

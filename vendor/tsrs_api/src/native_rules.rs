@@ -8,12 +8,41 @@ use tsrs_ast::SourceFile;
 use tsrs_compiler::Program;
 use tsrs_core::P;
 use tsrs_core::json::Value;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+pub fn symbol_has_jsdoc_tag(symbol: P<tsrs_ast::Symbol>, name: &str) -> bool {
+    tsrs_ls::get_symbol_jsdoc_tags(Some(symbol))
+        .iter()
+        .any(|tag| tag.name == name)
+}
+
+/// Rule caches belong to one snapshot, project and checker. Keeping them in
+/// the checker registry prevents symbols from escaping into a later program.
+#[derive(Default)]
+pub struct NativeRuleState {
+    caches: Mutex<HashMap<(String, TypeId), Arc<dyn Any + Send + Sync>>>,
+}
+
+impl NativeRuleState {
+    pub fn cache<T: Default + Send + 'static>(&self, key: &str) -> Arc<Mutex<T>> {
+        let mut caches = self.caches.lock().unwrap();
+        Arc::clone(caches
+            .entry((key.to_string(), TypeId::of::<T>()))
+            .or_insert_with(|| Arc::new(Mutex::new(T::default()))))
+            .downcast::<Mutex<T>>()
+            .unwrap_or_else(|_| unreachable!("cache type is part of the key"))
+    }
+}
 
 pub struct LintrsNativeRuleSpec {
     /// Exported rule name inside the library (e.g. "no-string-value").
     pub name: String,
     /// ESLint rule id to report (e.g. "demo/no-string-value").
     pub id: String,
+    /// Owning library. Older callers may omit it for unambiguous rule names.
+    pub library: Option<String>,
     pub options: Value,
 }
 
@@ -26,11 +55,15 @@ pub struct LintrsNativeFix {
 pub struct LintrsNativeSuggestion {
     pub desc: String,
     pub fix: LintrsNativeFix,
+    pub message_id: Option<String>,
+    pub data: Option<Value>,
 }
 
 pub struct LintrsNativeDiagnostic {
     pub rule_id: String,
     pub message: String,
+    pub message_id: Option<String>,
+    pub node_type: Option<String>,
     pub pos: u32,
     pub end: u32,
     pub fix: Option<LintrsNativeFix>,
@@ -41,6 +74,7 @@ pub struct LintrsNativeCall<'a> {
     pub checker: &'a mut tsrs_checker::Checker,
     pub program: &'static Program,
     pub source_file: P<SourceFile>,
+    pub state: Arc<NativeRuleState>,
 }
 
 pub type LintrsNativeRunner = for<'a> unsafe fn(

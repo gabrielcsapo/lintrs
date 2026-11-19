@@ -113,6 +113,10 @@ export default [{ files: ["**/*.ts"], plugins: { ${JSON.stringify(pluginName)}: 
         const got = messages[index];
         assert.equal(got.ruleId, ruleId);
         if (want.message !== undefined) assert.equal(got.message, want.message);
+        if (want.messageId !== undefined)
+          assert.equal(got.messageId, want.messageId);
+        if (want.nodeType !== undefined)
+          assert.equal(got.nodeType, want.nodeType);
         if (want.line !== undefined) assert.equal(got.line, want.line);
         if (want.column !== undefined) assert.equal(got.column, want.column);
         if (want.endLine !== undefined) assert.equal(got.endLine, want.endLine);

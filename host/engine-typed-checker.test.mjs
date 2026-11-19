@@ -7,6 +7,46 @@ import { ESLint } from "eslint";
 
 import { fixture, run, oracle, comparable } from "./test-support/fixture.mjs";
 
+test("tuple minimum lengths distinguish empty, optional, required, rest, and variadic elements", async t => {
+  const f = fixture(t, {
+    typed: true,
+    rules: {},
+    source:
+      "export type Empty = [];\nexport type Optional = [string?];\nexport type Required = [string, number?];\nexport type Rest = [string, ...number[]];\nexport type Variadic<T extends unknown[]> = [...T, string];\n",
+    extraConfig: `{plugins: {probe: {rules: {minimum: {meta: {schema: []}, create(context) {const s = context.sourceCode.parserServices; const c = s.program.getTypeChecker(); return {TSTypeAliasDeclaration(node) {const type = c.getTypeAtLocation(s.esTreeNodeToTSNodeMap.get(node)); context.report({node: node.id, message: String(type.target.minLength)});}};}}}}}, rules: {'probe/minimum': 'warn'}}`,
+  });
+  const actual = run(f);
+  assert.equal(actual.status, 0, actual.stderr);
+  const expected = await oracle(f);
+  assert.deepEqual(
+    expected.messages.map(message => message.message),
+    ["0", "0", "1", "1", "2"],
+  );
+  assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
+});
+
+test("boolean literal intrinsics preserve allowed constant loops without allowing false loops", async t => {
+  const f = fixture(t, {
+    typed: true,
+    rules: {
+      "@typescript-eslint/no-unnecessary-condition": [
+        "error",
+        { allowConstantLoopConditions: true },
+      ],
+    },
+    source:
+      "export function loop() {\n while (true) { break; }\n while (false) { break; }\n const allowed = true as const;\n while (allowed) { break; }\n if (true) console.log('constant');\n}\n",
+  });
+  const actual = run(f);
+  assert.equal(actual.status, 1, actual.stderr);
+  const expected = await oracle(f);
+  assert.deepEqual(
+    expected.messages.map(message => message.line),
+    [3, 6],
+  );
+  assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
+});
+
 test("unchanged typed rules use the Rust checker for imported, generic, and union types", async t => {
   const f = fixture(t, {
     typed: true,

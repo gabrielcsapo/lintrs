@@ -1,13 +1,53 @@
 //! Fixture rule crate used by host/native-*.test.mjs. Not shipped.
 
+use lintrs::native::serde_json::Value;
 use lintrs::native::{Fix, Rule, RuleContext, Suggestion, probe_address};
 use lintrs::ts::ast::Kind;
 use lintrs::ts::core::P;
-use lintrs::native::serde_json::Value;
 
 /// Flags a `value` identifier whose type is `string`.
 #[derive(Default)]
 struct ValueIsString;
+
+#[derive(Default)]
+struct FileCounter;
+
+#[derive(Default)]
+struct ExitOrdering(std::cell::RefCell<Vec<String>>);
+
+impl Rule for ExitOrdering {
+    fn listens_to(&self, kind: Kind) -> bool {
+        kind == Kind::CallExpression
+    }
+    fn visit(&self, node: P<lintrs::ts::ast::Node>, _context: &mut RuleContext<'_>) {
+        self.0.borrow_mut().push(format!(
+            "enter {}",
+            node.as_call_expression().expression().text()
+        ));
+    }
+    fn exit(&self, node: P<lintrs::ts::ast::Node>, context: &mut RuleContext<'_>) {
+        let name = node.as_call_expression().expression().text();
+        self.0.borrow_mut().push(format!("exit {name}"));
+        if name == "outer" {
+            context.report(node, self.0.borrow().join(", "));
+        }
+    }
+}
+
+impl Rule for FileCounter {
+    fn initialize(&self, context: &mut RuleContext<'_>) {
+        let cache = context.cache::<usize>();
+        let mut count = cache.lock().unwrap();
+        *count += 1;
+        context.report_with_id((0, 1), format!("file {}", *count), "fileCount", "Program");
+    }
+
+    fn listens_to(&self, _kind: Kind) -> bool {
+        false
+    }
+
+    fn visit(&self, _node: P<lintrs::ts::ast::Node>, _context: &mut RuleContext<'_>) {}
+}
 
 impl Rule for ValueIsString {
     fn listens_to(&self, kind: Kind) -> bool {
@@ -133,9 +173,15 @@ impl Rule for SuggestRename {
             format!("rename '{}' to '{}'", self.target, self.replacement),
             vec![Suggestion {
                 desc: format!("Replace with '{}'", self.replacement),
+                message_id: Some("replaceName".into()),
+                data: Some(lintrs::native::serde_json::json!({"replacement": self.replacement})),
                 fix: Fix {
-                    pos: lintrs::ts::scanner::get_token_pos_of_node(node, context.source_file, false)
-                        .max(0) as u32,
+                    pos: lintrs::ts::scanner::get_token_pos_of_node(
+                        node,
+                        context.source_file,
+                        false,
+                    )
+                    .max(0) as u32,
                     end: node.end().max(0) as u32,
                     text: self.replacement.clone(),
                 },
@@ -145,6 +191,8 @@ impl Rule for SuggestRename {
 }
 
 lintrs::export_rules! {
+    "exit-ordering" => lintrs::native::simple::<ExitOrdering>,
+    "file-counter" => lintrs::native::simple::<FileCounter>,
     "value-is-string" => lintrs::native::simple::<ValueIsString>,
     "rename-value" => rename_value,
     "suggest-rename" => suggest_rename,

@@ -7,6 +7,28 @@ import { createFlags, translateFlags } from "./type-services/flags.mjs";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 
+test("createFlags uses the consumer TypeScript flag layout", () => {
+  const source = {
+    api: {
+      TypeFlags: { Null: 1, Object: 2 },
+      ObjectFlags: {},
+      SymbolFlags: {},
+    },
+    ast: { NodeFlags: {}, SyntaxKind: { EndOfFile: 0 } },
+  };
+  const consumer = {
+    TypeFlags: { Null: 8, Object: 1048576 },
+    ObjectFlags: {},
+    SymbolFlags: {},
+    NodeFlags: {},
+    SyntaxKind: { EndOfFileToken: 1 },
+  };
+  const { flags } = createFlags(source, consumer);
+  assert.equal(flags.type(1), 8);
+  assert.equal(flags.type(2), 1048576);
+  assert.equal(flags.type(3), 1048584);
+});
+
 test("translateFlags masks ignored bits and still rejects unknown bits", () => {
   const source = { A: 1, B: 2 };
   const target = { A: 16, B: 32 };

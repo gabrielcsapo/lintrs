@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-
-import { lint } from "./parallel.mjs";
+import { enableCompileCache } from "node:module";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   formatTiming,
   merge,
@@ -17,6 +18,7 @@ async function main() {
     options: {
       config: { type: "string" },
       quiet: { type: "boolean", default: false },
+      "require-native": { type: "boolean", default: false },
       format: { type: "string", default: "unix" },
       concurrency: { type: "string", default: "off" },
     },
@@ -35,6 +37,21 @@ async function main() {
       "Start the compatibility host through the lintrs Rust binary",
     );
   }
+  if (process.env.NODE_V8_COVERAGE === undefined) {
+    const cache = enableCompileCache(
+      process.env.NODE_COMPILE_CACHE ??
+        join(
+          process.env.LINTRS_CACHE_DIR ?? join(homedir(), ".cache", "lintrs"),
+          "node-compile",
+        ),
+    );
+    if (
+      cache.directory !== undefined &&
+      process.env.NODE_COMPILE_CACHE === undefined
+    )
+      process.env.NODE_COMPILE_CACHE = cache.directory;
+  }
+  const { lint } = await import("./parallel.mjs");
   const profile = profiler();
   const profiles = [];
   const started = performance.now();
@@ -42,6 +59,7 @@ async function main() {
     configPath: values.config,
     paths: positionals,
     quiet: values.quiet,
+    requireNative: values["require-native"],
     concurrency: /^\d+$/u.test(concurrency) ? Number(concurrency) : concurrency,
     profiles,
   });

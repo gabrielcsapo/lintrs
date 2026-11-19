@@ -69,6 +69,13 @@ export default [{ files: ['**/*.ts'], plugins: { '@typescript-eslint': ts.plugin
     delete env.LINTRS_IN_PROCESS_BINDING;
     delete env.LINTRS_TYPED_NATIVE;
     delete env.LINTRS_NATIVE_HOME;
+    delete env.LINTRS_COMPACT_DECLARATIONS;
+    delete env.LINTRS_FUSED_SYMBOLS;
+    delete env.LINTRS_TRUE_BULK;
+    delete env.LINTRS_CONTEXTUAL_BATCH;
+    delete env.LINTRS_LAZY_OBJECTS;
+    delete env.LINTRS_LAZY_PREFETCH;
+    delete env.LINTRS_ADAPTIVE_FACTS;
     const result = spawnSync(binary, ["-c", config, "-f", "json", file], {
       cwd: dir,
       encoding: "utf8",

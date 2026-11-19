@@ -145,7 +145,7 @@ function normalizeVisitorFields(sourceCode) {
   visit(sourceCode.ast);
 }
 
-export function selectFiles(paths, configs) {
+export function discoverFiles(paths, configs) {
   const files = new Set();
   const visit = path => {
     const stat = lstatSync(path);
@@ -154,16 +154,21 @@ export function selectFiles(paths, configs) {
     if (stat.isDirectory()) {
       if (configs.isDirectoryIgnored(path)) return;
       for (const entry of readdirSync(path)) visit(join(path, entry));
-    } else if (
-      /\.(?:[cm]?[jt]sx?|graphql)$/u.test(path) &&
-      configs.getConfig(path) !== undefined
-    ) {
+    } else if (/\.(?:[cm]?[jt]sx?|graphql)$/u.test(path)) {
       files.add(path);
     }
   };
   for (const path of paths) visit(resolve(path));
-  if (files.size === 0) throw new Error("No configured files selected");
   return [...files].sort();
+}
+
+export function selectFiles(paths, configs, { allowEmpty = false } = {}) {
+  const files = discoverFiles(paths, configs).filter(
+    file => configs.getConfig(file) !== undefined,
+  );
+  if (!allowEmpty && files.length === 0)
+    throw new Error("No configured files selected");
+  return files;
 }
 
 export async function runHost(options) {
@@ -177,7 +182,18 @@ export async function runHost(options) {
   }
 }
 
-async function lint(directory, { configPath, paths, quiet = false, services }) {
+async function lint(
+  directory,
+  {
+    configPath,
+    paths,
+    quiet = false,
+    requireNative = false,
+    services,
+    loadedConfig,
+    inlineOverrides,
+  },
+) {
   const version = require("oxlint/package.json").version;
   if (version !== "1.83.0") {
     throw new Error(
@@ -190,14 +206,33 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
     rules,
     knownRules,
     root,
-  } = await loadConfig(configPath);
+  } = loadedConfig ?? (await loadConfig(configPath));
   let configs = baseConfigs;
   const files = selectFiles(paths, configs);
-  const overrides = inlineConfigs(files, configs, rules);
+  const overrides = inlineOverrides ?? inlineConfigs(files, configs, rules);
   if (overrides.size > 0)
     configs = {
       getConfig: file => overrides.get(file) ?? baseConfigs.getConfig(file),
     };
+  if (requireNative) {
+    const unsupported = new Set();
+    for (const file of files)
+      for (const [id, setting] of Object.entries(
+        configs.getConfig(file).rules ?? {},
+      )) {
+        const severity = setting[0] ?? 0;
+        if (severity === 0 || (quiet && severity === 1)) continue;
+        if (
+          file.endsWith(".graphql") ||
+          rules.get(id)?.meta?.lintrs?.native !== true
+        )
+          unsupported.add(id);
+      }
+    if (unsupported.size > 0)
+      throw new Error(
+        `--require-native cannot run ${unsupported.size} rule(s):\n${[...unsupported].sort().join("\n")}`,
+      );
+  }
   const skippedRulesFor = config =>
     quiet
       ? Object.entries(config.rules ?? {})
@@ -276,6 +311,7 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
                 id,
                 severity,
                 nodeType: descriptor.node?.type ?? descriptor.type ?? null,
+                loc: descriptor.loc,
                 suggestionData,
               });
             },
@@ -319,6 +355,7 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
       ),
     }),
   );
+  const preparedNativeOptions = new Map();
   const nativeSpecsFor = config => {
     const specs = [];
     const libraries = new Set();
@@ -333,11 +370,26 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
           resolveNativeLibrary(rule.meta.lintrs),
         );
       libraries.add(nativeLibraries.get(rule.meta.lintrs));
+      const options = setting.slice(1);
+      const normalized = options.length === 1 ? options[0] : options;
+      let prepared = normalized;
+      if (rule.meta.lintrs.prepareOptions !== undefined) {
+        let variants = preparedNativeOptions.get(rule);
+        if (variants === undefined) {
+          variants = new Map();
+          preparedNativeOptions.set(rule, variants);
+        }
+        const key = JSON.stringify(normalized);
+        if (!variants.has(key))
+          variants.set(key, rule.meta.lintrs.prepareOptions(normalized));
+        prepared = variants.get(key);
+      }
       specs.push({
         name: rule.meta.lintrs.rule,
+        library: nativeLibraries.get(rule.meta.lintrs),
         id: ruleId,
         severity,
-        options: setting.slice(1),
+        options: prepared,
       });
     }
     return { specs, libraries: [...libraries] };
@@ -353,10 +405,11 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
     const runNative = () =>
       services.runNative(filePath, {
         libraries,
-        rules: specs.map(({ name, id, options }) => ({
+        rules: specs.map(({ name, id, library, options }) => ({
           name,
           id,
-          options: options.length === 1 ? options[0] : options,
+          library,
+          options,
         })),
         jsSkipped,
       });
@@ -373,7 +426,10 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
         message: diagnostic.message,
         line: start.line,
         column: start.column,
-        nodeType: null,
+        nodeType: diagnostic.nodeType ?? null,
+        ...(diagnostic.messageId === undefined
+          ? {}
+          : { messageId: diagnostic.messageId }),
         ...(diagnostic.end === diagnostic.pos
           ? {}
           : { endLine: end.line, endColumn: end.column }),
@@ -390,6 +446,12 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
           : {
               suggestions: diagnostic.suggestions.map(suggestion => ({
                 desc: suggestion.desc,
+                ...(suggestion.messageId === undefined
+                  ? {}
+                  : { messageId: suggestion.messageId }),
+                ...(suggestion.data === undefined
+                  ? {}
+                  : { data: suggestion.data }),
                 fix: {
                   range: [suggestion.fix.pos, suggestion.fix.end],
                   text: suggestion.fix.text,
@@ -526,8 +588,21 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
     const nativeMessages = nativeMessagesFor(filePath, config, position, false);
     const messages = (current.diagnostics ?? []).map((diagnostic, index) => {
       const report = current.reports[index];
-      const start = position(diagnostic.start);
-      const end = position(diagnostic.end);
+      const start =
+        report.loc === undefined
+          ? position(diagnostic.start)
+          : {
+              line: (report.loc.start ?? report.loc).line,
+              column: (report.loc.start ?? report.loc).column + 1,
+            };
+      const end =
+        report.loc === undefined
+          ? diagnostic.end === diagnostic.start
+            ? undefined
+            : position(diagnostic.end)
+          : report.loc.end === undefined
+            ? undefined
+            : { line: report.loc.end.line, column: report.loc.end.column + 1 };
       const fix = mergeFixes(diagnostic.fixes, text);
       const suggestions = (diagnostic.suggestions ?? []).map(
         (suggestion, index) => ({
@@ -551,7 +626,7 @@ async function lint(directory, { configPath, paths, quiet = false, services }) {
         ...(diagnostic.messageId === null
           ? {}
           : { messageId: diagnostic.messageId }),
-        ...(diagnostic.end === diagnostic.start
+        ...(end === undefined
           ? {}
           : { endLine: end.line, endColumn: end.column }),
         ...(fix === undefined ? {} : { fix }),

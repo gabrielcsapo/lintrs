@@ -23,6 +23,7 @@ use std::time::Instant;
 // instance the plugin may also depend on. Re-exporting them lets the macro
 // and plugin code go through `$crate::native::...` unconditionally.
 pub use serde_json::{self, Value};
+pub use tsrs_api::native_rules::symbol_has_jsdoc_tag;
 use tsrs_ast::{Kind, Node, SourceFile};
 use tsrs_checker::Checker;
 use tsrs_compiler::Program;
@@ -44,7 +45,7 @@ pub mod ts {
 pub const ABI_FINGERPRINT: &str = concat!(
     "lintrs/",
     env!("CARGO_PKG_VERSION"),
-    "/tsrs-c21a36ef/rustc-",
+    "/native-3/tsrs-c21a36ef/rustc-",
     env!("LINTRS_RUSTC_VERSION"),
     "/",
     env!("LINTRS_BUILD_ID")
@@ -64,6 +65,8 @@ pub trait Rule {
     fn initialize(&self, _context: &mut RuleContext<'_>) {}
     fn listens_to(&self, kind: Kind) -> bool;
     fn visit(&self, node: P<Node>, context: &mut RuleContext<'_>);
+    /// Called after the children of a node selected by `listens_to`.
+    fn exit(&self, _node: P<Node>, _context: &mut RuleContext<'_>) {}
 }
 
 #[derive(Clone)]
@@ -78,6 +81,8 @@ pub struct Fix {
 pub struct Suggestion {
     pub desc: String,
     pub fix: Fix,
+    pub message_id: Option<String>,
+    pub data: Option<Value>,
 }
 
 pub struct Diagnostic {
@@ -87,6 +92,8 @@ pub struct Diagnostic {
     pub end: u32,
     pub fix: Option<Fix>,
     pub suggestions: Vec<Suggestion>,
+    pub message_id: Option<String>,
+    pub node_type: Option<String>,
 }
 
 /// Either a node (reported over its full range) or an explicit range.
@@ -117,9 +124,17 @@ pub struct RuleContext<'a> {
     pub options: &'a Value,
     rule_id: &'a str,
     diagnostics: &'a mut Vec<Diagnostic>,
+    state: &'a tsrs_api::native_rules::NativeRuleState,
+    cache_key: &'a str,
 }
 
 impl RuleContext<'_> {
+    /// Shared across files for this rule's library, id and options, within one
+    /// snapshot, project and checker. A replacement checker starts empty.
+    pub fn cache<T: Default + Send + 'static>(&self) -> std::sync::Arc<std::sync::Mutex<T>> {
+        self.state.cache(self.cache_key)
+    }
+
     pub fn report(&mut self, target: impl Into<ReportTarget>, message: impl Into<String>) {
         let (pos, end) = self.range(target);
         self.diagnostics.push(Diagnostic {
@@ -129,7 +144,23 @@ impl RuleContext<'_> {
             end,
             fix: None,
             suggestions: Vec::new(),
+            message_id: None,
+            node_type: None,
         });
+    }
+
+    pub fn report_with_id(
+        &mut self,
+        target: impl Into<ReportTarget>,
+        message: impl Into<String>,
+        message_id: impl Into<String>,
+        node_type: impl Into<String>,
+    ) -> &mut Diagnostic {
+        self.report(target, message);
+        let diagnostic = self.diagnostics.last_mut().unwrap();
+        diagnostic.message_id = Some(message_id.into());
+        diagnostic.node_type = Some(node_type.into());
+        diagnostic
     }
 
     pub fn report_with_fix(
@@ -146,6 +177,8 @@ impl RuleContext<'_> {
             end,
             fix: Some(fix),
             suggestions: Vec::new(),
+            message_id: None,
+            node_type: None,
         });
     }
 
@@ -163,6 +196,8 @@ impl RuleContext<'_> {
             end,
             fix: None,
             suggestions,
+            message_id: None,
+            node_type: None,
         });
     }
 
@@ -278,7 +313,7 @@ pub(crate) fn profiler_registered(registered: bool) {
 }
 
 /// Returns and clears the accumulated per-rule times as
-/// `{ ruleId: { ms, calls } }`; calls count `initialize` plus each `visit`.
+/// `{ ruleId: { ms, calls } }`; calls count `initialize`, `visit` and `exit`.
 #[cfg(feature = "typed-native")]
 pub(crate) fn take_rule_times() -> Value {
     let times = RULE_TIMES
@@ -365,23 +400,37 @@ unsafe fn run(
     drop(cache);
     let mut rules: Vec<Box<dyn Rule>> = Vec::with_capacity(specs.len());
     let mut options: Vec<Value> = Vec::with_capacity(specs.len());
+    let mut cache_keys = Vec::with_capacity(specs.len());
     for spec in specs {
         let parsed = tsrs_core::json::marshal(&spec.options)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or(Value::Null);
-        let mut found = false;
-        for bundle in &bundles {
+        let mut found = None;
+        for (library, bundle) in libraries.iter().zip(&bundles) {
+            if spec.library.as_ref().is_some_and(|owner| owner != library) {
+                continue;
+            }
             for entry in bundle.rules {
                 if entry.name == spec.name {
-                    rules.push(unsafe { (entry.create)(&parsed) }?);
-                    found = true;
+                    if found.is_some() {
+                        return Err(format!(
+                            "ambiguous native rule {}; specify its library",
+                            spec.name
+                        ));
+                    }
+                    found = Some((library, entry));
                 }
             }
         }
-        if !found {
-            return Err(format!("no native rule named {}", spec.name));
-        }
+        let Some((library, entry)) = found else {
+            return Err(format!(
+                "no native rule named {} in its configured library",
+                spec.name
+            ));
+        };
+        rules.push(unsafe { (entry.create)(&parsed) }?);
+        cache_keys.push(serde_json::to_string(&(library, &spec.name, &spec.id, &parsed)).unwrap());
         options.push(parsed);
     }
     let mut diagnostics = Vec::new();
@@ -395,6 +444,7 @@ unsafe fn run(
         call: &mut tsrs_api::native_rules::LintrsNativeCall<'_>,
         specs: &[tsrs_api::native_rules::LintrsNativeRuleSpec],
         options: &[Value],
+        cache_keys: &[String],
         diagnostics: &mut Vec<Diagnostic>,
         times: &mut Option<Vec<(f64, u64)>>,
     ) {
@@ -418,6 +468,8 @@ unsafe fn run(
                 options: &options[index],
                 rule_id: &specs[index].id,
                 diagnostics,
+                state: &call.state,
+                cache_key: &cache_keys[index],
             };
             timed(times, index, || rule.visit(node, &mut context));
         }
@@ -429,11 +481,25 @@ unsafe fn run(
                 call,
                 specs,
                 options,
+                cache_keys,
                 diagnostics,
                 times,
             );
             false
         });
+        for &index in &active {
+            let mut context = RuleContext {
+                source_file: call.source_file,
+                program: call.program,
+                checker: call.checker,
+                options: &options[index],
+                rule_id: &specs[index].id,
+                diagnostics,
+                state: &call.state,
+                cache_key: &cache_keys[index],
+            };
+            timed(times, index, || rules[index].exit(node, &mut context));
+        }
     }
     for (index, rule) in rules.iter().enumerate() {
         let mut context = RuleContext {
@@ -443,6 +509,8 @@ unsafe fn run(
             options: &options[index],
             rule_id: &specs[index].id,
             diagnostics: &mut diagnostics,
+            state: &call.state,
+            cache_key: &cache_keys[index],
         };
         timed(&mut times, index, || rule.initialize(&mut context));
     }
@@ -454,6 +522,7 @@ unsafe fn run(
             call,
             specs,
             &options,
+            &cache_keys,
             &mut diagnostics,
             &mut times,
         );
@@ -483,6 +552,8 @@ unsafe fn run(
             |diagnostic| tsrs_api::native_rules::LintrsNativeDiagnostic {
                 rule_id: diagnostic.rule_id,
                 message: diagnostic.message,
+                message_id: diagnostic.message_id,
+                node_type: diagnostic.node_type,
                 pos: utf16(diagnostic.pos),
                 end: utf16(diagnostic.end),
                 fix: diagnostic
@@ -498,6 +569,10 @@ unsafe fn run(
                     .map(
                         |suggestion| tsrs_api::native_rules::LintrsNativeSuggestion {
                             desc: suggestion.desc,
+                            message_id: suggestion.message_id,
+                            data: suggestion.data.map(|value| {
+                                tsrs_core::json::unmarshal(&value.to_string()).unwrap()
+                            }),
                             fix: tsrs_api::native_rules::LintrsNativeFix {
                                 pos: utf16(suggestion.fix.pos),
                                 end: utf16(suggestion.fix.end),

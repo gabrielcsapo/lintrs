@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -19,6 +20,44 @@ import { temporaryDirectory } from "./test-support/temporary.mjs";
 import { tsrsSdkRoot } from "./type-services/sdk.mjs";
 
 import { workerCount } from "./parallel.mjs";
+
+test("parallel selection evaluates file configurations only in workers and tolerates empty slices", t => {
+  const dir = mkdtempSync(join(tmpdir(), "lintrs-selection-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir");
+  writeFileSync(join(dir, "package.json"), '{"type":"module"}');
+  const trace = join(dir, "selection.log");
+  writeFileSync(
+    join(dir, "eslint.config.mjs"),
+    `import {appendFileSync} from 'node:fs';
+import {threadId} from 'node:worker_threads';
+export default [{files:[file=>{appendFileSync(${JSON.stringify(trace)},threadId+':'+file+'\\n'); return file.endsWith('/c.ts');}],rules:{'no-debugger':'error'}}];`,
+  );
+  for (const file of ["a.ts", "b.ts", "c.ts", "d.ts"])
+    writeFileSync(join(dir, file), "debugger;");
+  const result = spawnSync(
+    join(root, "target/release/lintrs"),
+    ["-f", "json", "--concurrency", "4", "a.ts", "b.ts", "c.ts", "d.ts"],
+    {
+      cwd: dir,
+      env: process.env,
+      encoding: "utf8",
+    },
+  );
+  assert.equal(result.status, 1, result.stderr);
+  const files = JSON.parse(result.stdout);
+  assert.deepEqual(
+    files.map(file => file.filePath),
+    [join(dir, "c.ts")],
+  );
+  assert.equal(files[0].messages[0].ruleId, "no-debugger");
+  const evaluations = readFileSync(trace, "utf8").trim().split("\n");
+  assert.equal(evaluations.length, 4);
+  assert.ok(
+    evaluations.every(line => !line.startsWith("0:")),
+    evaluations.join("\n"),
+  );
+});
 
 const root = resolve(import.meta.dirname, "..");
 const nativeBin = join(root, "target/lintrs-native/bin/lintrs");
