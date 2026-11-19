@@ -26,6 +26,7 @@ struct ProjectRegistry {
     checker_id: u32,
     types: FxHashMap<u32, P<Type>>,
     signatures: FxHashMap<u64, P<Signature>>,
+    native_rules: std::sync::Arc<crate::native_rules::NativeRuleState>,
 }
 
 #[derive(Default)]
@@ -135,6 +136,12 @@ impl CheckerRegistry {
             *reg = ProjectRegistry { checker_id, ..Default::default() };
         }
         reg
+    }
+
+    pub fn native_rule_state(&self, project: &str, checker_id: u32) -> CheckerResult<std::sync::Arc<crate::native_rules::NativeRuleState>> {
+        let mut st = self.lock();
+        Self::check_live(&st)?;
+        Ok(std::sync::Arc::clone(&Self::project_for_checker(&mut st, project, checker_id).native_rules))
     }
 
     /// Go `registerType`. `checker_id` is the id of the API checker that produced `t`.
@@ -273,5 +280,42 @@ impl CheckerRegistry {
             )
         };
         pin.acquire()
+    }
+}
+
+#[cfg(test)]
+mod lintrs_native_cache_tests {
+    use super::CheckerRegistry;
+    use std::sync::Arc;
+
+    #[test]
+    fn lintrs_native_cache_reuses_only_the_same_snapshot_project_and_checker() {
+        let first = CheckerRegistry::new();
+        let state = first.native_rule_state("project", 1).unwrap();
+        *state.cache::<usize>("rule/options").lock().unwrap() = 7;
+        let same = first.native_rule_state("project", 1).unwrap();
+        assert!(Arc::ptr_eq(&state, &same));
+        assert_eq!(*same.cache::<usize>("rule/options").lock().unwrap(), 7);
+        assert_eq!(*same.cache::<usize>("other-rule/options").lock().unwrap(), 0);
+        assert!(same.cache::<String>("rule/options").lock().unwrap().is_empty());
+
+        for isolated in [
+            first.native_rule_state("other-project", 1).unwrap(),
+            CheckerRegistry::new().native_rule_state("project", 1).unwrap(),
+            first.native_rule_state("project", 2).unwrap(),
+        ] {
+            assert_eq!(*isolated.cache::<usize>("rule/options").lock().unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn lintrs_native_cache_is_dropped_on_snapshot_release() {
+        let registry = CheckerRegistry::new();
+        let state = registry.native_rule_state("project", 1).unwrap();
+        let weak = Arc::downgrade(&state);
+        drop(state);
+        registry.release();
+        assert!(weak.upgrade().is_none());
+        assert!(registry.native_rule_state("project", 1).is_err());
     }
 }

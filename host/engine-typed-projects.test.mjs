@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -6,9 +7,84 @@ import { test } from "node:test";
 
 import { ESLint } from "eslint";
 
-import { fixture, run, oracle } from "./test-support/fixture.mjs";
+import { binary, fixture, run, oracle } from "./test-support/fixture.mjs";
 
 const require = createRequire(import.meta.url);
+
+test("an empty type profile path disables profiling", async t => {
+  const f = fixture(t, {
+    typed: true,
+    rules: { "@typescript-eslint/no-unsafe-unary-minus": "error" },
+    source: "export const value = 1; -value;\n",
+  });
+  const actual = run(f, [], { LINTRS_TYPE_PROFILE: "" });
+  assert.equal(actual.status, 0, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
+});
+
+test("provided programs preserve compiler overrides and declaration references in the Rust checker", async t => {
+  const f = fixture(t, {
+    typed: true,
+    rules: {
+      "@typescript-eslint/no-unsafe-unary-minus": "error",
+      "@typescript-eslint/no-unnecessary-condition": "error",
+    },
+    source:
+      "import { value } from './dependency/src/value';\n-value;\ndeclare const name: string | null;\nif (name !== null) console.log(name);\n",
+  });
+  const dependency = join(f.dir, "dependency");
+  mkdirSync(join(dependency, "src"), { recursive: true });
+  mkdirSync(join(dependency, "dist"));
+  writeFileSync(
+    join(dependency, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: { composite: true, rootDir: "src", outDir: "dist" },
+      include: ["src/*.ts"],
+    }),
+  );
+  writeFileSync(join(dependency, "src/value.ts"), "export const value = 1;\n");
+  writeFileSync(
+    join(dependency, "dist/value.d.ts"),
+    "export declare const value: string;\n",
+  );
+  const config = JSON.parse(readFileSync(join(f.dir, "tsconfig.json"), "utf8"));
+  config.references = [{ path: "./dependency" }];
+  writeFileSync(join(f.dir, "tsconfig.json"), JSON.stringify(config));
+  writeFileSync(
+    f.config,
+    `import ts from 'typescript';
+import plugin from 'typescript-eslint';
+const path = ${JSON.stringify(join(f.dir, "tsconfig.json"))};
+const parsed = ts.getParsedCommandLineOfConfigFile(path, {strictNullChecks: false}, {...ts.sys, onUnRecoverableConfigFileDiagnostic(d) { throw new Error(ts.flattenDiagnosticMessageText(d.messageText, '\\n')); }});
+const program = ts.createProgram({rootNames: parsed.fileNames, options: parsed.options, projectReferences: parsed.projectReferences});
+if (process.env.LINTRS_FORBID_JS_CHECKER) program.getTypeChecker = () => { throw new Error('JavaScript checker must not run'); };
+export default [{files: ['**/*.ts'], plugins: {'@typescript-eslint': plugin.plugin}, languageOptions: {parser: plugin.parser, parserOptions: {programs: [program], projectService: false}}, rules: {'@typescript-eslint/no-unsafe-unary-minus': 'error', '@typescript-eslint/no-unnecessary-condition': 'error'}}];\n`,
+  );
+  const actual = spawnSync(binary, ["-c", f.config, "-f", "json", f.file], {
+    cwd: f.dir,
+    encoding: "utf8",
+    env: { ...process.env, NODE_OPTIONS: "", LINTRS_FORBID_JS_CHECKER: "1" },
+  });
+  assert.equal(actual.status, 1, actual.stderr);
+  const expected = await oracle(f);
+  assert.equal(expected.messages.length, 2, JSON.stringify(expected.messages));
+  assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
+});
+
+test("typed services defer node maps until a rule queries them", async t => {
+  const f = fixture(t, {
+    typed: true,
+    rules: {},
+    source: "export const value = 1;\n",
+    extraConfig: `{plugins: {bridge: {rules: {inspect: {meta: {schema: []}, create(context) {const services = context.sourceCode.parserServices; if (!services.program || typeof services.esTreeNodeToTSNodeMap.get !== 'function' || typeof services.tsNodeToESTreeNodeMap.get !== 'function') throw new Error('Missing typed services'); return {};}}}}}, rules: {'bridge/inspect': 'error'}}`,
+  });
+  const profile = join(f.dir, "profile.json");
+  const actual = run(f, [], { LINTRS_TYPE_PROFILE: profile });
+  assert.equal(actual.status, 0, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
+  const timing = JSON.parse(readFileSync(profile, "utf8"));
+  assert.equal(timing.api.totals.sourceFilesFetched ?? 0, 0);
+});
 
 test("referenced projects use built declarations and preserve deprecated exports", async t => {
   const f = fixture(t, {

@@ -291,7 +291,7 @@ export function packageCrate(crateDir, outDir) {
   return join(outDir, file);
 }
 
-if (process.argv[1] !== undefined) {
+if (process.argv[1] !== undefined && existsSync(process.argv[1])) {
   // Compare realpaths: invocation through a symlinked prefix (e.g. /tmp on
   // macOS) must still recognize itself.
   const invoked = realpathSync(process.argv[1]);

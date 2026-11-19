@@ -1,9 +1,4 @@
-import { createRequire } from "node:module";
-
 import { IdentityMap } from "./state.mjs";
-
-const require = createRequire(import.meta.url);
-const ts = require("typescript");
 
 const nodeKinds = {
   Program: ["SourceFile"],
@@ -108,6 +103,7 @@ const nodeKinds = {
 };
 
 export function nodeMaps(sourceCode, rawFile, adapter, sdk) {
+  const { ts } = adapter;
   const byRange = new Map();
   const byKind = new Map();
   const visit = node => {

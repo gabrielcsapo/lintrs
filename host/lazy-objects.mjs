@@ -102,6 +102,18 @@ export function createLazyObjects({
           if (key === "getFlags")
             return bind(key, () => flags[kind](header.flags));
           if (kind === "type") {
+            if (key === "minLength" && read("fixedLength") !== undefined)
+              return (read("elementFlags") ?? []).filter(
+                flag =>
+                  (flag &
+                    (sdk.api.ElementFlags.Required |
+                      sdk.api.ElementFlags.Variadic)) !==
+                  0,
+              ).length;
+            if (key === "intrinsicName" && typeBit("BooleanLiteral")) {
+              const value = read("value");
+              if (typeof value === "boolean") return String(value);
+            }
             if (typePredicates[key] !== undefined)
               return bind(key, () => typeBit(typePredicates[key]));
             if (key === "isUnionOrIntersection")

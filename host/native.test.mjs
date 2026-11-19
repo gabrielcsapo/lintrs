@@ -35,6 +35,17 @@ const nodeDir = dirname(process.execPath);
 
 const sdk = haveNative ? tsrsSdkRoot(root) : undefined;
 
+test("native helpers can be imported by a program read from stdin", () => {
+  const result = spawnSync(process.execPath, ["--input-type=module", "-"], {
+    cwd: root,
+    input:
+      'import { nativePlugin } from "./host/native/index.mjs"; console.log(typeof nativePlugin);',
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "function");
+});
+
 // A temp lint project: package.json + tsconfig + the repo's runtime deps
 // linked in, plus a generated eslint.config.mjs.
 function project(t, { config, files, crates } = {}) {
@@ -107,6 +118,140 @@ function run(dir, cache, args, { restricted = false, env = {} } = {}) {
 }
 
 test("native rules", { skip: skipNative }, async t => {
+  await t.test(
+    "empty autofixes and suggestion replacements remain present",
+    t => {
+      const { dir, cache } = project(t, {
+        files: { "delete.ts": "const oldName = 1;" },
+        config: ({
+          crateDir,
+        }) => `import {nativePlugin} from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+export default [{files:['**/*.ts'],plugins:{demo:nativePlugin({name:'demo',rules:['rename-value','suggest-rename'],crate:${JSON.stringify(crateDir)}})},languageOptions:{parserOptions:{projectService:true}},rules:{'demo/rename-value':['error',{match:'oldName',replacement:''}],'demo/suggest-rename':['warn',{match:'oldName',replacement:''}]}}];`,
+      });
+      const result = run(dir, cache, ["-f", "json", "delete.ts"]);
+      assert.equal(result.status, 1, result.stderr);
+      const [file] = JSON.parse(result.stdout);
+      const rename = file.messages.find(
+        message => message.ruleId === "demo/rename-value",
+      );
+      assert.deepEqual(rename.fix, { range: [6, 13], text: "" });
+      const suggestion = file.messages.find(
+        message => message.ruleId === "demo/suggest-rename",
+      ).suggestions[0];
+      assert.deepEqual(suggestion.fix, { range: [6, 13], text: "" });
+      assert.equal(suggestion.messageId, "replaceName");
+      assert.deepEqual(suggestion.data, { replacement: "" });
+    },
+  );
+  await t.test("exit listeners run after nested children", t => {
+    const { dir, cache } = project(t, {
+      files: { "case.ts": "outer(inner());" },
+      config: ({
+        crateDir,
+      }) => `import {nativePlugin} from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+export default [{files: ['**/*.ts'],
+ plugins: {demo: nativePlugin({name: 'demo', rules: ['exit-ordering'], crate: ${JSON.stringify(crateDir)}})},
+ languageOptions: {parserOptions: {projectService: true}}, rules: {'demo/exit-ordering': 'error'}}];`,
+    });
+    const result = run(dir, cache, [
+      "--require-native",
+      "-f",
+      "json",
+      "case.ts",
+    ]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(
+      JSON.parse(result.stdout)[0].messages[0].message,
+      "enter outer, enter inner, exit inner, exit outer",
+    );
+  });
+  await t.test(
+    "plugins can export the same native rule name from different libraries",
+    t => {
+      const { dir, cache } = project(t, {
+        files: { "case.ts": "export {};" },
+        config: ({ dir }) => {
+          for (const name of ["first", "second"])
+            cpSync(fixtureCrate, join(dir, name), { recursive: true });
+          const secondSource = join(dir, "second/src/lib.rs");
+          writeFileSync(
+            secondSource,
+            readFileSync(secondSource, "utf8").replace(
+              'format!("file {}", *count)',
+              'format!("second file {}", *count)',
+            ),
+          );
+          return `import { nativePlugin } from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+const first = nativePlugin({name: 'first', rules: ['file-counter'], crate: ${JSON.stringify(join(dir, "first"))}});
+const second = nativePlugin({name: 'second', rules: ['file-counter'], crate: ${JSON.stringify(join(dir, "second"))}});
+export default [{files: ['**/*.ts'], plugins: {first, second},
+ languageOptions: {parserOptions: {projectService: true}},
+ rules: {'first/file-counter': 'error', 'second/file-counter': 'error'}}];`;
+        },
+      });
+      const result = run(dir, cache, [
+        "--require-native",
+        "-f",
+        "json",
+        "case.ts",
+      ]);
+      assert.equal(result.status, 1, result.stderr);
+      const messages = JSON.parse(result.stdout)[0].messages;
+      assert.equal(messages.length, 2);
+      assert.equal(
+        messages.find(m => m.ruleId === "first/file-counter").message,
+        "file 1",
+      );
+      assert.equal(
+        messages.find(m => m.ruleId === "second/file-counter").message,
+        "second file 1",
+      );
+    },
+  );
+  await t.test(
+    "program caches share across files and isolate rule ids and options",
+    t => {
+      const { dir, cache } = project(t, {
+        files: {
+          "a.ts": "export {};",
+          "b.ts": "export {};",
+          "c.ts": "export {};",
+        },
+        config: ({
+          crateDir,
+        }) => `import { nativePlugin } from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+const plugin = nativePlugin({ name: "demo", rules: ["file-counter"], crate: ${JSON.stringify(crateDir)} });
+export default [{ files: ["**/*.ts"], plugins: { first: plugin, second: plugin },
+ languageOptions: { parserOptions: { projectService: true } },
+ rules: { "first/file-counter": "error", "second/file-counter": "error" } },
+ { files: ["c.ts"], rules: { "first/file-counter": ["error", { fresh: true }] } }];`,
+      });
+      const result = run(dir, cache, [
+        "--require-native",
+        "-f",
+        "json",
+        "a.ts",
+        "b.ts",
+        "c.ts",
+      ]);
+      assert.equal(result.status, 1, result.stderr);
+      const files = JSON.parse(result.stdout);
+      for (const [index, file] of files.entries()) {
+        const first = file.messages.find(
+          message => message.ruleId === "first/file-counter",
+        );
+        const second = file.messages.find(
+          message => message.ruleId === "second/file-counter",
+        );
+        assert.equal(first.message, `file ${index === 2 ? 1 : index + 1}`);
+        assert.equal(second.message, `file ${index + 1}`);
+        for (const message of file.messages) {
+          assert.equal(message.messageId, "fileCount");
+          assert.equal(message.nodeType, "Program");
+        }
+      }
+    },
+  );
   await t.test(
     "prebuilt platform package runs without a toolchain",
     async t => {
@@ -351,6 +496,8 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
     const suggest = file.messages.find(m => m.ruleId === "demo/suggest-rename");
     assert.equal(suggest.severity, 1);
     assert.equal(suggest.suggestions[0].desc, "Replace with 'renamed'");
+    assert.equal(suggest.suggestions[0].messageId, "replaceName");
+    assert.deepEqual(suggest.suggestions[0].data, { replacement: "renamed" });
     assert.deepEqual(suggest.suggestions[0].fix.range, [nameStart, nameEnd]);
     const nonAscii = file.messages.find(
       m => m.ruleId === "demo/no-non-ascii-string",
@@ -368,6 +515,84 @@ export default [{ files: ["**/*.ts"], plugins: { demo },
       quietFile.messages.every(m => m.ruleId !== "demo/suggest-rename"),
     );
   });
+
+  await t.test(
+    "parallel preparation builds selected and inline-enabled libraries",
+    t => {
+      const { dir, cache } = project(t, {
+        files: {
+          "a.ts":
+            "/* eslint demo/value-is-string: error */\nexport let value: string = 'a';",
+          "b.ts":
+            "/* eslint demo/value-is-string: error */\nexport let value: string = 'b';",
+        },
+        config: ({
+          crateDir,
+        }) => `import {nativePlugin} from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+const demo=nativePlugin({name:'demo',rules:['value-is-string'],crate:${JSON.stringify(crateDir)}});
+const unused=nativePlugin({name:'unused',rules:['missing'],crate:${JSON.stringify(join(root, "does-not-exist"))}});
+export default [{files:['**/*.ts'],plugins:{demo,unused},languageOptions:{parserOptions:{projectService:true}},rules:{'demo/value-is-string':'off'}},
+ {files:['unselected/**/*.ts'],rules:{'unused/missing':'error'}}];`,
+      });
+      const result = run(dir, cache, [
+        "--require-native",
+        "--concurrency",
+        "2",
+        "-f",
+        "json",
+        "a.ts",
+        "b.ts",
+      ]);
+      assert.equal(result.status, 1, result.stderr);
+      const files = JSON.parse(result.stdout);
+      assert.equal(files.length, 2);
+      assert.ok(
+        files.every(
+          file =>
+            file.messages.length === 1 &&
+            file.messages[0].ruleId === "demo/value-is-string",
+        ),
+      );
+    },
+  );
+
+  await t.test(
+    "native option preparation retains user options and supplies runtime data",
+    t => {
+      const { dir, cache } = project(t, {
+        files: {
+          "case.ts": "export const oldName = 1;",
+          "other.ts": "export const oldName = 2;",
+        },
+        config: ({
+          crateDir,
+        }) => `import { nativePlugin } from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+let prepared = false;
+const plugin = nativePlugin({name:'demo',rules:['rename-value'],crate:${JSON.stringify(crateDir)},
+  prepareOptions:{'rename-value': options => {
+    if (prepared) throw new Error('Options prepared more than once');
+    prepared = true;
+    return {...options,replacement:Object.getOwnPropertyNames(Math).includes('floor') ? 'runtimeName' : 'unexpected'};
+  }}});
+export default [{files:['**/*.ts'],plugins:{demo:plugin},languageOptions:{parserOptions:{projectService:true}},
+  rules:{'demo/rename-value':['error',{match:'oldName',replacement:'userName'}]}}];`,
+      });
+      const result = run(dir, cache, [
+        "--require-native",
+        "-f",
+        "json",
+        "case.ts",
+        "other.ts",
+      ]);
+      assert.equal(result.status, 1, result.stderr);
+      const files = JSON.parse(result.stdout);
+      assert.equal(files.length, 2);
+      for (const file of files) {
+        assert.equal(file.messages.length, 1);
+        assert.equal(file.messages[0].fix.text, "runtimeName");
+      }
+    },
+  );
 
   await t.test(
     "eslint-disable and unused-disable directives apply",

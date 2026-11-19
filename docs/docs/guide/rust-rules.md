@@ -9,6 +9,12 @@ checker as typed JS rules and skips the JS rule runtime. It is enabled and
 configured exactly like a JS rule. Rust rules run on TypeScript project
 files only — never on `.graphql`.
 
+Use `lintrs --require-native` to verify that every enabled rule in the selected
+files runs in Rust. It rejects JavaScript rules, including rules enabled by
+inline comments, before linting. With `--quiet`, only error-level rules are
+required to be native, matching the rules that command executes. This is a
+coverage gate for migrations; it does not compare the behavior of rule ports.
+
 ## The same rule, in Rust
 
 This is `call-returns-union` from [JavaScript rules](./js-rules), as a
@@ -73,20 +79,30 @@ export default nativePlugin({
 
 ## `RuleContext`
 
-| Member                                                      | What it is                                                 |
-| ----------------------------------------------------------- | ---------------------------------------------------------- |
-| `source_file`                                               | the tsrs `SourceFile`                                      |
-| `program`                                                   | the shared `Program`                                       |
-| `checker`                                                   | `&mut tsrs_checker::Checker`                               |
-| `options`                                                   | `lintrs::native::Value`: first element of the config array |
-| `report(target, message)`                                   | report a diagnostic                                        |
-| `report_with_fix(target, message, Fix { pos, end, text })`  | report with an autofix                                     |
-| `report_with_suggestions(target, message, Vec<Suggestion>)` | report with suggestions                                    |
+| Member                                                      | What it is                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------- |
+| `source_file`                                               | the tsrs `SourceFile`                                       |
+| `program`                                                   | the shared `Program`                                        |
+| `checker`                                                   | `&mut tsrs_checker::Checker`                                |
+| `options`                                                   | `lintrs::native::Value`: first element of the config array  |
+| `cache::<T>()`                                              | `Arc<Mutex<T>>` shared across files in this program/checker |
+| `report(target, message)`                                   | report a diagnostic                                         |
+| `report_with_id(target, message, message_id, node_type)`    | report with ESLint metadata; returns the diagnostic         |
+| `report_with_fix(target, message, Fix { pos, end, text })`  | report with an autofix                                      |
+| `report_with_suggestions(target, message, Vec<Suggestion>)` | report with suggestions                                     |
 
 A target is a node (`P<Node>`, its token range) or a `{ pos, end }` range in
 tsrs **UTF-8 byte offsets**. lintrs converts to ESLint's UTF-16 locations.
 `initialize` runs once per file before traversal; `listens_to` picks node
-kinds, `visit` runs on each.
+kinds, `visit` runs before its children, and the optional `exit` callback runs
+after its children. Use `exit` for rules that need the same ordering as
+ESLint's `:exit` listeners.
+
+For expensive graph analysis, use `context.cache::<MyCache>()` rather than a
+global map keyed by raw program pointers. The cache is scoped to the snapshot,
+project, checker, library, rule id and options. A checker replacement gets a
+fresh cache, and releasing the snapshot releases its caches. Rule instances
+themselves are still created per file.
 
 ## Exporting
 

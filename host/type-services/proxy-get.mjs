@@ -1,9 +1,5 @@
-import { createRequire } from "node:module";
-
 import { profiler } from "../profile.mjs";
 import { displayParts, docTags } from "./wrapping.mjs";
-
-const require = createRequire(import.meta.url);
 
 // TIMING labels for property reads, "get <kind>.<property>", built once per
 // kind and property (array indices collapse to "[index]").
@@ -27,8 +23,6 @@ const readLabel = (kind, key) => {
   }
   return label;
 };
-const ts = require("typescript");
-
 const typeProperties = {
   symbol: "getSymbol",
   aliasSymbol: "getAliasSymbol",
@@ -70,6 +64,7 @@ const typeMethods = {
 // access over tsrs nodes, types, symbols, signatures, maps, and arrays.
 export function createGetHandler(ctx) {
   const {
+    ts,
     sdk,
     project,
     lazy,
@@ -167,6 +162,20 @@ export function createGetHandler(ctx) {
         if (isSymbol) return flags.symbol(target.flags);
       }
       if (isType) {
+        if (key === "minLength" && target.fixedLength !== undefined)
+          return (target.elementFlags ?? []).filter(
+            flag =>
+              (flag &
+                (sdk.api.ElementFlags.Required |
+                  sdk.api.ElementFlags.Variadic)) !==
+              0,
+          ).length;
+        if (
+          key === "intrinsicName" &&
+          (target.flags & sdk.api.TypeFlags.BooleanLiteral) !== 0 &&
+          typeof target.value === "boolean"
+        )
+          return String(target.value);
         if (
           key === "escapedName" &&
           (target.flags & sdk.api.TypeFlags.UniqueESSymbol) !== 0

@@ -163,7 +163,7 @@ test(
       { cwd: dir, env },
     );
     assert.equal(lint.status, 1, lint.stderr);
-    assert.match(lint.stdout, /no-debugger/u);
+    assert.match(lint.stdout, /no-debugger/u, lint.stderr);
 
     // (2) A prebuilt native rule package consumed via `@lintrs/cli/native`.
     const key = platformKey();

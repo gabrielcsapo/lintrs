@@ -1,10 +1,16 @@
 import { realpathSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
 
 import { createAccessPlans } from "./access-plans.mjs";
 import { profiler } from "./profile.mjs";
 import { compatibility } from "./type-services/adapter.mjs";
 import { nodeMaps } from "./type-services/node-maps.mjs";
-import { projectForFile } from "./type-services/project.mjs";
+import {
+  projectConfig,
+  projectForFile,
+  projectName,
+} from "./type-services/project.mjs";
 import { loadSdk } from "./type-services/sdk.mjs";
 
 export async function createTypeServices({ configs, files, root }) {
@@ -42,6 +48,17 @@ export async function createTypeServices({ configs, files, root }) {
     );
   };
   if (![...projects.values()].some(Boolean)) return untyped;
+  const consumerRequire = createRequire(join(root, "package.json"));
+  let targetTypeScriptPath;
+  try {
+    targetTypeScriptPath = consumerRequire.resolve("typescript");
+  } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND") throw error;
+  }
+  const targetTypeScript =
+    targetTypeScriptPath === undefined
+      ? undefined
+      : consumerRequire(targetTypeScriptPath);
   if (process.env.LINTRS_BINARY === undefined)
     throw new Error("The Rust type server binary is missing");
   const sdk = await loadSdk(root);
@@ -68,7 +85,7 @@ export async function createTypeServices({ configs, files, root }) {
   const plans = adaptive ? createAccessPlans() : undefined;
   if (lazyObjects && process.env.LINTRS_TYPED_NATIVE !== "1")
     throw new Error("Lazy objects require the typed native binding");
-  const profilePath = process.env.LINTRS_TYPE_PROFILE;
+  const profilePath = process.env.LINTRS_TYPE_PROFILE || undefined;
   const projectTimings = [];
   const lazyStats = [];
   const symbolStats = [];
@@ -143,18 +160,7 @@ export async function createTypeServices({ configs, files, root }) {
     let entry;
     {
       const start = performance.now();
-      const config = api.readConfigFile(projectPath);
-      if (config.error !== undefined)
-        throw new Error(
-          `Cannot read ${projectPath}: ${JSON.stringify(config.error)}`,
-        );
-      const parsed = api.parseJsonConfigFileContent(config.config, {
-        configFileName: projectPath,
-      });
-      if (parsed.errors.length > 0)
-        throw new Error(
-          `Cannot parse ${projectPath}: ${JSON.stringify(parsed.errors)}`,
-        );
+      const parsed = projectConfig(projectPath, api);
       const snapshot = api.createSnapshot({
         createPrograms: [
           {
@@ -168,14 +174,14 @@ export async function createTypeServices({ configs, files, root }) {
         ],
       });
       projectTimings.push({
-        path: projectPath,
+        path: projectName(projectPath),
         durationMs: performance.now() - start,
       });
       const program = snapshot.operation.createdPrograms[0];
       const project =
         program === undefined ? undefined : snapshot.getProject(program.id);
       if (project === undefined)
-        throw new Error(`tsrs did not open ${projectPath}`);
+        throw new Error(`tsrs did not open ${projectName(projectPath)}`);
       entry = {
         project,
         snapshot,
@@ -260,6 +266,7 @@ export async function createTypeServices({ configs, files, root }) {
                   }),
               }
             : undefined,
+          targetTypeScript,
         ),
       };
       snapshots.set(projectPath, entry);
@@ -270,16 +277,29 @@ export async function createTypeServices({ configs, files, root }) {
     const projectPath = projects.get(file);
     if (projectPath === undefined) return untyped(file);
     const entry = ensureEntry(projectPath);
-    const rawFile = entry.project.program.getSourceFile(file);
-    if (rawFile === undefined)
+    entry.files ??= new Set(entry.project.program.getSourceFileNames());
+    if (!entry.files.has(file))
       throw new Error(`File is outside its tsrs project: ${file}`);
-    if (rawFile.text.replace(/^\uFEFF/u, "") !== sourceCode.text)
-      throw new Error(`Rust type snapshot differs from linted source: ${file}`);
-    const built = nodeMaps(sourceCode, rawFile, entry.adapter, sdk);
+    let built;
+    const getMaps = () => {
+      if (built !== undefined) return built;
+      const rawFile = entry.project.program.getSourceFile(file);
+      if (rawFile === undefined)
+        throw new Error(`File is outside its tsrs project: ${file}`);
+      if (rawFile.text.replace(/^\uFEFF/u, "") !== sourceCode.text)
+        throw new Error(
+          `Rust type snapshot differs from linted source: ${file}`,
+        );
+      built = nodeMaps(sourceCode, rawFile, entry.adapter, sdk);
+      return built;
+    };
+    const lazyMap = key => ({
+      get: node => getMaps()[key].get(node),
+      has: node => getMaps()[key].has(node),
+    });
     const maps = {
-      ...built,
-      esTreeNodeToTSNodeMap: profiledMap(built.esTreeNodeToTSNodeMap),
-      tsNodeToESTreeNodeMap: profiledMap(built.tsNodeToESTreeNodeMap),
+      esTreeNodeToTSNodeMap: profiledMap(lazyMap("esTreeNodeToTSNodeMap")),
+      tsNodeToESTreeNodeMap: profiledMap(lazyMap("tsNodeToESTreeNodeMap")),
     };
     return {
       ...maps,
@@ -326,10 +346,11 @@ export async function createTypeServices({ configs, files, root }) {
     remaining.set(project, count);
     if (count === 0) {
       const stats = snapshots.get(project)?.adapter.lazyStats();
-      if (stats !== undefined) lazyStats.push({ path: project, ...stats });
+      if (stats !== undefined)
+        lazyStats.push({ path: projectName(project), ...stats });
       const symbols = snapshots.get(project)?.adapter.symbolStats();
       if (symbols !== undefined)
-        symbolStats.push({ path: project, ...symbols });
+        symbolStats.push({ path: projectName(project), ...symbols });
       snapshots.get(project)?.snapshot.dispose();
       snapshots.delete(project);
     }
@@ -348,7 +369,7 @@ export async function createTypeServices({ configs, files, root }) {
     const entry = ensureEntry(projectPath);
     if (process.env.LINTRS_NATIVE_DEBUG === "1")
       console.error("runNative", {
-        projectPath,
+        projectPath: projectName(projectPath),
         file,
         names: entry.project.program.getSourceFileNames?.(),
       });

@@ -478,6 +478,11 @@ pub(crate) fn lintrs_run_native_rules(
                     Ok(LintrsNativeRuleSpec {
                         name: name.clone(),
                         id: id.clone(),
+                        library: match fields.get("library") {
+                            None => None,
+                            Some(Value::String(library)) => Some(library.clone()),
+                            _ => return Err(CheckerError::invalid("rule library must be a string")),
+                        },
                         options: fields.get("options").cloned().unwrap_or(Value::Null),
                     })
                 }
@@ -498,10 +503,12 @@ pub(crate) fn lintrs_run_native_rules(
     let runner = native_rules_runner()
         .ok_or_else(|| CheckerError::client("the native rules runner is not registered"))?;
     let program = s.program;
+    let state = s.sd.scope.registry.native_rule_state(&s.sd.project, s.checker_id)?;
     let mut call = LintrsNativeCall {
         checker: s.c(),
         program,
         source_file,
+        state,
     };
     // SAFETY: the runner is the one lintrs registers (lintrs::native::run). It
     // is unsafe because it calls into native rule libraries, which lintrs only
@@ -516,13 +523,19 @@ pub(crate) fn lintrs_run_native_rules(
                 let mut o = json::Obj::new();
                 o.str_nonempty("ruleId", &diagnostic.rule_id);
                 o.str_nonempty("message", &diagnostic.message);
+                if let Some(id) = diagnostic.message_id {
+                    o.str_nonempty("messageId", &id);
+                }
+                if let Some(node_type) = diagnostic.node_type {
+                    o.str_nonempty("nodeType", &node_type);
+                }
                 o.num("pos", diagnostic.pos as f64);
                 o.num("end", diagnostic.end as f64);
                 if let Some(fix) = diagnostic.fix {
                     let mut f = json::Obj::new();
                     f.num("pos", fix.pos as f64);
                     f.num("end", fix.end as f64);
-                    f.str_nonempty("text", &fix.text);
+                    f.set("text", Value::String(fix.text));
                     o.set("fix", f.build());
                 }
                 if !diagnostic.suggestions.is_empty() {
@@ -535,10 +548,16 @@ pub(crate) fn lintrs_run_native_rules(
                                 .map(|suggestion| {
                                     let mut o = json::Obj::new();
                                     o.str_nonempty("desc", &suggestion.desc);
+                                    if let Some(message_id) = suggestion.message_id {
+                                        o.set("messageId", Value::String(message_id));
+                                    }
+                                    if let Some(data) = suggestion.data {
+                                        o.set("data", data);
+                                    }
                                     let mut f = json::Obj::new();
                                     f.num("pos", suggestion.fix.pos as f64);
                                     f.num("end", suggestion.fix.end as f64);
-                                    f.str_nonempty("text", &suggestion.fix.text);
+                                    f.set("text", Value::String(suggestion.fix.text));
                                     o.set("fix", f.build());
                                     o.build()
                                 })

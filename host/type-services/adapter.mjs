@@ -15,6 +15,7 @@ export function compatibility(
   native,
   contextualTypes,
   symbolFacts,
+  targetTypeScript,
 ) {
   const ctx = {
     sdk,
@@ -35,7 +36,7 @@ export function compatibility(
     symbolStats: { headers: 0, nodes: 0, hydrations: 0, aliasHits: 0 },
     sourceFiles: new Map(),
     sourceFileResolvers: new IdentityMap(),
-    ...createFlags(sdk),
+    ...createFlags(sdk, targetTypeScript),
   };
   ctx.lazy =
     native === undefined
@@ -71,6 +72,7 @@ export function compatibility(
     },
   });
   return {
+    ts: ctx.ts,
     wrap,
     checker,
     program,

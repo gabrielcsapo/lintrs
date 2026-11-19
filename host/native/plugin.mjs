@@ -22,8 +22,10 @@ function callerDirectory() {
  * `crate` — path/URL of a local Rust rule crate (built from source by lintrs).
  * `prebuilt` — map of platform keys (`darwin-arm64`, `linux-x64-gnu`, …) to
  * npm package names shipping a compiled rule library.
+ * `prepareOptions` — optional per-rule functions adding runtime data to native
+ * options. Called once per distinct configuration in each lint worker.
  */
-export function nativePlugin({ name, rules, crate, prebuilt }) {
+export function nativePlugin({ name, rules, crate, prebuilt, prepareOptions }) {
   if (typeof name !== "string" || name.length === 0)
     throw new Error("nativePlugin: a plugin name is required");
   if (!Array.isArray(rules) || rules.length === 0)
@@ -48,6 +50,7 @@ export function nativePlugin({ name, rules, crate, prebuilt }) {
                     ? fileURLToPath(crate)
                     : resolve(String(crate)),
               prebuilt,
+              prepareOptions: prepareOptions?.[rule],
               root,
             },
           },

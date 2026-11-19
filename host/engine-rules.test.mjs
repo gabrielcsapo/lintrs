@@ -19,6 +19,35 @@ import {
   binary,
 } from "./test-support/fixture.mjs";
 
+test("native-only enforcement rejects JS rules, including inline enables and workers", t => {
+  const f = fixture(t, {
+    rules: { "no-debugger": "off" },
+    source: "/* eslint no-debugger: error */\ndebugger;\n",
+  });
+  const second = join(f.dir, "second.ts");
+  writeFileSync(second, "export {};\n");
+  for (const args of [[], ["--concurrency", "2", second]]) {
+    const result = run(f, ["--require-native", ...args]);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(
+      result.stderr,
+      /--require-native cannot run 1 rule\(s\):\nno-debugger/u,
+    );
+  }
+});
+
+test("native-only enforcement honors quiet warnings and disabled rules", t => {
+  const f = fixture(t, {
+    rules: { "no-debugger": "warn", "no-unused-vars": "off" },
+    source: "debugger;\n",
+  });
+  const warning = run(f, ["--require-native"]);
+  assert.equal(warning.status, 2, warning.stderr);
+  const quiet = run(f, ["--require-native", "--quiet"]);
+  assert.equal(quiet.status, 0, quiet.stderr);
+  assert.deepEqual(JSON.parse(quiet.stdout), []);
+});
+
 test("unchanged rules preserve diagnostics, fixes, suggestions, selectors, scopes, and code paths", async t => {
   const f = fixture(t, {
     rules: {
@@ -91,6 +120,37 @@ test("per-file options and severities come from resolved configuration", async t
   const quiet = run(f, ["--quiet"]);
   assert.equal(quiet.status, 0, quiet.stderr);
   assert.deepEqual(JSON.parse(quiet.stdout), []);
+});
+
+test("single-thread runs load a configuration factory once", t => {
+  const f = fixture(t, { rules: {}, source: "debugger;\n" });
+  writeFileSync(
+    f.config,
+    `let loads = 0; export default () => {
+    if (++loads > 1) throw new Error('Configuration was loaded twice');
+    return [{files: ['**/*.ts'], rules: {'no-debugger': 'error'}}];
+  };\n`,
+  );
+  const actual = run(f);
+  assert.equal(actual.status, 1, actual.stderr);
+  const result = JSON.parse(actual.stdout)[0];
+  assert.equal(result.messages.length, 1);
+  assert.equal(result.messages[0].ruleId, "no-debugger");
+});
+
+test("explicit report locations preserve points, ranges, and file-level line zero", async t => {
+  const f = fixture(t, {
+    rules: {},
+    source: "const value = 1;\n",
+    extraConfig: `{plugins: {local: {rules: {locations: {meta: {schema: []}, create(context) {return {Program(node) {
+      context.report({loc: {start: {line: 0, column: 0}, end: {line: 0, column: 0}}, message: 'File-level'});
+      context.report({node, loc: {line: 1, column: 6}, message: 'Point'});
+      context.report({node, loc: {start: {line: 1, column: 6}, end: {line: 1, column: 11}}, message: 'Range'});
+    }};}}}}}, rules: {'local/locations': 'error'}}`,
+  });
+  const actual = run(f);
+  assert.equal(actual.status, 1, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout)[0], await oracle(f));
 });
 
 test("suggestion data follows retained iterator fixes", async t => {
