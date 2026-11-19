@@ -1,29 +1,34 @@
 # CLI
 
 ```txt
-lintrs [--config <file>] [--format unix|json] [--quiet] [--concurrency <n|auto|off>] [paths...]
+lintrs [--config <file>] [--format unix|json] [--quiet] [--require-native]
+       [--files-report <file>] [--concurrency <n|auto|off>] [paths...]
 ```
 
-| Flag                           | Meaning                                                                                                              |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `-c`, `--config <file>`        | Flat-config module. Default: `eslint.config.mjs`.                                                                    |
-| `-f`, `--format <fmt>`         | `unix` (ESLint's unix formatter, default) or `json` (`LintResult[]`).                                                |
-| `--quiet`                      | Run only error-level rules; report only errors.                                                                      |
-| `--concurrency <n\|auto\|off>` | Lint in parallel worker threads that share one type-checker session. `auto` uses ESLint's heuristic. Default: `off`. |
-| `--version`                    | Print the version.                                                                                                   |
-| `paths...`                     | Files or directories. Default: `.`.                                                                                  |
+| Flag                           | Meaning                                                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-c`, `--config <file>`        | Flat-config module. Default: `eslint.config.mjs`.                                                                                                       |
+| `-f`, `--format <fmt>`         | `unix` (ESLint's unix formatter, default) or `json` (`LintResult[]`).                                                                                   |
+| `--quiet`                      | Run only error-level rules; report only errors.                                                                                                         |
+| `--require-native`             | Fail (exit `2`) if any enabled rule would run in JavaScript. See [Enforcing native rule coverage](/guide/configuration#enforcing-native-rule-coverage). |
+| `--files-report <file>`        | Write every linted file's path to `<file>` as a JSON array, including clean files `--quiet` hides. Relative to the working directory.                   |
+| `--concurrency <n\|auto\|off>` | Lint in parallel worker threads that share one type-checker session. `auto` uses ESLint's heuristic. Default: `off`.                                    |
+| `--version`                    | Print the version.                                                                                                                                      |
+| `paths...`                     | Files or directories. Default: `.`.                                                                                                                     |
 
-| Exit code | Meaning                                                                      |
-| --------- | ---------------------------------------------------------------------------- |
-| `0`       | No error-severity messages.                                                  |
-| `1`       | At least one error-severity message.                                         |
-| `2`       | Engine failure (config, parse, transport, host). Never falls back to ESLint. |
+| Exit code | Meaning                                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `0`       | No error-severity messages.                                                                                                 |
+| `1`       | At least one error-severity message.                                                                                        |
+| `2`       | Engine failure (config, parse, transport, host), or `--require-native` found a JavaScript rule. Never falls back to ESLint. |
 
 ```sh
 lintrs --config eslint.config.mjs src/**/*.ts
 lintrs -c eslint.config.mjs -f json src/**/*.ts > eslint-output.json
 lintrs --quiet src
 lintrs --concurrency auto src
+lintrs --require-native src                    # CI gate: every enabled rule runs in Rust
+lintrs --quiet --files-report linted.json src  # coverage list, independent of the output
 ```
 
 ## Profiling

@@ -2,24 +2,26 @@
 
 ## Locations
 
-| Variable                    | Effect                                                                                          |
-| --------------------------- | ----------------------------------------------------------------------------------------------- |
-| `LINTRS_BINARY`             | `lintrs` binary the host uses for subprocess work. Set by the binary itself.                    |
-| `LINTRS_HOST_DIR`           | Directory with `cli.mjs` and the other `host/*.mjs` modules.                                    |
-| `LINTRS_TSRS_SDK`           | tsrs `npm/tsrs` SDK directory (with `package.json` and `src/`). Skips auto-detection and Cargo. |
-| `LINTRS_NATIVE_HOME`        | Native layout directory (`lib/` with `liblintrs.*` and `liblintrs.node`).                       |
-| `LINTRS_IN_PROCESS_BINDING` | Absolute path to a `.node` copy of `liblintrs`. Uses the in-process binding, not the pipe.      |
-| `LINTRS_SDK_DIR`            | Rule-crate SDK directory (`sdk/deps`), instead of `<prefix>/sdk`.                               |
-| `LINTRS_CACHE_DIR`          | Cache for source-built rule crates. Default: `~/.cache/lintrs`.                                 |
+| Variable                    | Effect                                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `LINTRS_BINARY`             | `lintrs` binary the host uses for subprocess work. Set by the binary itself.                                      |
+| `LINTRS_HOST_DIR`           | Directory with `cli.mjs` and the other `host/*.mjs` modules.                                                      |
+| `LINTRS_TSRS_SDK`           | tsrs `npm/tsrs` SDK directory (with `package.json` and `src/`). Skips auto-detection and Cargo.                   |
+| `LINTRS_NATIVE_HOME`        | Native layout directory (`lib/` with `liblintrs.*` and `liblintrs.node`).                                         |
+| `LINTRS_IN_PROCESS_BINDING` | Absolute path to a `.node` copy of `liblintrs`. Uses the in-process binding, not the pipe.                        |
+| `LINTRS_SDK_DIR`            | Rule-crate SDK directory (`sdk/deps`), instead of `<prefix>/sdk`.                                                 |
+| `LINTRS_CACHE_DIR`          | Cache for source-built rule crates and Node's module compile cache (`node-compile/`). Default: `~/.cache/lintrs`. |
 
 ## Execution
 
-| Variable                | Effect                                                                                                                 |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `LINTRS_OXLINT_THREADS` | Parser threads per worker under `--concurrency`.                                                                       |
-| `TIMING`                | `1`, `all` or a count: per-rule timing table on stderr, as ESLint's `TIMING`. See [Profiling rules](/guide/profiling). |
-| `LINTRS_TYPE_PROFILE`   | Path to write type-service timings and the per-rule summary (JSON).                                                    |
-| `LINTRS_NATIVE_DEBUG`   | `1` logs native-rule dispatch to stderr.                                                                               |
+| Variable                     | Effect                                                                                                                                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LINTRS_OXLINT_THREADS`      | Parser threads per worker under `--concurrency`.                                                                                                                                                    |
+| `TIMING`                     | `1`, `all` or a count: per-rule timing table on stderr, as ESLint's `TIMING`. See [Profiling rules](/guide/profiling).                                                                              |
+| `LINTRS_TYPE_PROFILE`        | Path to write type-service timings and the per-rule summary (JSON).                                                                                                                                 |
+| `LINTRS_NATIVE_DEBUG`        | `1` logs native-rule dispatch to stderr.                                                                                                                                                            |
+| `NODE_COMPILE_CACHE`         | Node's own: directory for the module compile cache lintrs enables. Default: `node-compile` under `LINTRS_CACHE_DIR`. See [Module compilation cache](/guide/configuration#module-compilation-cache). |
+| `NODE_DISABLE_COMPILE_CACHE` | Node's own: `1` turns the module compile cache off, for example to measure cold starts.                                                                                                             |
 
 ## Typed native session
 
