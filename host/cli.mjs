@@ -19,6 +19,7 @@ async function main() {
       config: { type: "string" },
       quiet: { type: "boolean", default: false },
       "require-native": { type: "boolean", default: false },
+      "files-report": { type: "string" },
       format: { type: "string", default: "unix" },
       concurrency: { type: "string", default: "off" },
     },
@@ -64,6 +65,11 @@ async function main() {
     profiles,
   });
   profile?.addWall(performance.now() - started);
+  if (values["files-report"] !== undefined)
+    writeFileSync(
+      values["files-report"],
+      `${JSON.stringify(results.map(result => result.filePath))}\n`,
+    );
   if (values.quiet) results = results.filter(result => result.errorCount > 0);
   if (values.format === "json") {
     process.stdout.write(`${JSON.stringify(results)}\n`);

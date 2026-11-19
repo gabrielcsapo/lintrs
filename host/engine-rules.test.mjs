@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -18,6 +19,18 @@ import {
   comparable,
   binary,
 } from "./test-support/fixture.mjs";
+
+test("file reports include clean files hidden by quiet output", t => {
+  const f = fixture(t, {
+    rules: { "no-debugger": "error" },
+    source: "export const value = 1;\n",
+  });
+  const report = join(f.dir, "files.json");
+  const actual = run(f, ["--quiet", "--files-report", report]);
+  assert.equal(actual.status, 0, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout), []);
+  assert.deepEqual(JSON.parse(readFileSync(report, "utf8")), [f.file]);
+});
 
 test("native-only enforcement rejects JS rules, including inline enables and workers", t => {
   const f = fixture(t, {
