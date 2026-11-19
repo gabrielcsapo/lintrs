@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-const binary = resolve(import.meta.dirname, "../target/release/lintrs");
+import { binary } from "./test-support/fixture.mjs";
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), "lintrs-compile-cache-"));
