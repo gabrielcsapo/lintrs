@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -15,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { binary } from "./test-support/fixture.mjs";
 import { temporaryDirectory } from "./test-support/temporary.mjs";
 
 import { tsrsSdkRoot } from "./type-services/sdk.mjs";
@@ -22,7 +24,9 @@ import { tsrsSdkRoot } from "./type-services/sdk.mjs";
 import { workerCount } from "./parallel.mjs";
 
 test("parallel selection evaluates file configurations only in workers and tolerates empty slices", t => {
-  const dir = mkdtempSync(join(tmpdir(), "lintrs-selection-"));
+  // Resolved: lintrs reports paths against its working directory, which the
+  // OS resolves (macOS's temporary directory sits behind /var -> /private/var).
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "lintrs-selection-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir");
   writeFileSync(join(dir, "package.json"), '{"type":"module"}');
@@ -36,7 +40,7 @@ export default [{files:[file=>{appendFileSync(${JSON.stringify(trace)},threadId+
   for (const file of ["a.ts", "b.ts", "c.ts", "d.ts"])
     writeFileSync(join(dir, file), "debugger;");
   const result = spawnSync(
-    join(root, "target/release/lintrs"),
+    binary,
     ["-f", "json", "--concurrency", "4", "a.ts", "b.ts", "c.ts", "d.ts"],
     {
       cwd: dir,
