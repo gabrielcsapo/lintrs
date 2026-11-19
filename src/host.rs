@@ -227,6 +227,7 @@ pub fn run(
     paths: &[PathBuf],
     quiet: bool,
     require_native: bool,
+    files_report: Option<&Path>,
     json: bool,
     concurrency: &str,
 ) -> anyhow::Result<bool> {
@@ -245,6 +246,9 @@ pub fn run(
     }
     if require_native {
         command.arg("--require-native");
+    }
+    if let Some(path) = files_report {
+        command.arg("--files-report").arg(path);
     }
     command.args(["--concurrency", concurrency]);
     if json {

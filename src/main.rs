@@ -29,6 +29,9 @@ struct Cli {
     /// Fail if an enabled rule needs the JavaScript rule runtime.
     #[arg(long)]
     require_native: bool,
+    /// Write the paths of all linted files as JSON, including clean files in quiet mode.
+    #[arg(long)]
+    files_report: Option<PathBuf>,
     /// Lint in parallel worker threads: a positive count, `auto`, or `off`.
     #[arg(long, value_name = "n|auto|off", default_value = "off", allow_hyphen_values = true, value_parser = parse_concurrency)]
     concurrency: Concurrency,
@@ -85,6 +88,7 @@ fn run(cli: &Cli) -> anyhow::Result<bool> {
         &cli.paths,
         cli.quiet,
         cli.require_native,
+        cli.files_report.as_deref(),
         matches!(cli.format, Format::Json),
         &cli.concurrency.as_host_arg(),
     )

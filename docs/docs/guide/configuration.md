@@ -70,6 +70,13 @@ Measure empty-cache and warm-cache runs separately: creating bytecode can add
 work to the first run. Reuse a cache directory across fresh processes to measure
 warm startup, and use `NODE_DISABLE_COMPILE_CACHE=1` for a control.
 
+## File coverage reports
+
+Use `--files-report <path>` to write a JSON array containing every linted file
+path. It includes clean files hidden by `--quiet`, so consumers can check file
+coverage independently of diagnostic output. An incomplete run does not write a
+report; use a fresh destination for each run.
+
 ## Not supported
 
 These fail with an error:
