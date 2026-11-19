@@ -46,7 +46,7 @@ tsrs_api = { path = "vendor/tsrs_api" }
 
 [package]
 name = "lintrs"
-version = "0.0.1"
+version = "0.0.2"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
