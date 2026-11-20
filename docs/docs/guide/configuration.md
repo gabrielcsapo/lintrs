@@ -45,6 +45,8 @@ the original configuration objects are not mutated.
 
 Every enabled rule runs on every file it covers. lintrs never runs oxlint's
 built-in rules and ignores `oxlint-disable` comments.
+Rules inspecting disable directives receive ESLint's comment semantics over
+the Rust-parsed AST, including its restrictions on line comments.
 
 ## Enforcing native rule coverage
 
