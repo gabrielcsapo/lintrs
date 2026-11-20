@@ -76,6 +76,18 @@ export function createGetHandler(ctx) {
     symbolDocs,
     signatureDocs,
   } = ctx;
+  // Node fields that hold a SyntaxKind rather than a child node need the same
+  // translation as `kind`: tsrs numbers several tokens and keywords
+  // differently from TypeScript (ExtendsKeyword is 95 in tsrs, 96 in
+  // TypeScript, where 95 is ExportKeyword).
+  const kindFields = new Map([
+    [sdk.ast.SyntaxKind.PrefixUnaryExpression, "operator"],
+    [sdk.ast.SyntaxKind.PostfixUnaryExpression, "operator"],
+    [sdk.ast.SyntaxKind.TypeOperator, "operator"],
+    [sdk.ast.SyntaxKind.HeritageClause, "token"],
+    [sdk.ast.SyntaxKind.MetaProperty, "keywordToken"],
+    [sdk.ast.SyntaxKind.ImportAttributes, "token"],
+  ]);
   const handlerFor = ({
     isNode,
     isType,
@@ -138,18 +150,13 @@ export function createGetHandler(ctx) {
           );
         return kind;
       }
-      if (
-        isNode &&
-        key === "operator" &&
-        (target.kind === sdk.ast.SyntaxKind.PrefixUnaryExpression ||
-          target.kind === sdk.ast.SyntaxKind.PostfixUnaryExpression)
-      ) {
-        const operator = kinds.get(target.operator);
-        if (operator === undefined)
+      if (isNode && kindFields.get(target.kind) === key) {
+        const kind = kinds.get(target[key]);
+        if (kind === undefined)
           throw new Error(
-            `Unsupported tsrs unary operator: ${sdk.ast.SyntaxKind[target.operator]}`,
+            `Unsupported tsrs SyntaxKind in ${sdk.ast.SyntaxKind[target.kind]}.${key}: ${sdk.ast.SyntaxKind[target[key]]}`,
           );
-        return operator;
+        return kind;
       }
       if (isHeritageType && key === "expression")
         return ctx.wrap(target.typeName);
