@@ -90,14 +90,27 @@ request and `Crossing` shows `-`.
 | Phase                         | What it measures                                                     |
 | ----------------------------- | -------------------------------------------------------------------- |
 | Rules (all)                   | Sum of the rule table.                                               |
+| Host imports                  | Loading the host after the CLI has enabled its compilation cache.    |
+| Configuration load            | Importing and normalizing the flat configuration, including plugins. |
+| File discovery                | Finding candidate input files before configuration matching.         |
+| Configuration scoping         | Removing configuration patterns that cannot match the inputs.        |
+| File configuration            | Selecting configured files and resolving their effective settings.   |
+| Inline configuration          | Reading configuration comments in selected files.                    |
+| Type service initialization   | Loading the checker SDK and creating its client before project work. |
 | Type services setup           | Per-file `parserServices` setup, charged here rather than to a rule. |
 | Project build                 | Opening the TypeScript project in tsrs.                              |
 | Native rules (Rust): dispatch | Running Rust rules, minus the rules' own time.                       |
 | Outside rules                 | Checker requests made outside any rule.                              |
-| Unattributed                  | Everything else: parsing, AST traversal, config loading, output.     |
+| Unattributed                  | Remaining host work, including parsing and AST traversal.            |
 
 With `--concurrency`, rule and phase times are summed across worker threads,
 so they can exceed the wall time.
+
+Wall time starts before the host imports and ends after linting. It excludes
+Node process startup, the CLI's own static imports, and formatting/writing the
+final output. Configuration imports are included, so a cold run can show
+whether loading plugins costs more than executing their rules. Compare
+unprofiled runs separately when measuring a performance change.
 
 ## JSON
 
