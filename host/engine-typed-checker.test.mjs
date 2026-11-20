@@ -7,6 +7,73 @@ import { ESLint } from "eslint";
 
 import { fixture, run, oracle, comparable } from "./test-support/fixture.mjs";
 
+test("readonly checks recognize prefix and postfix mutations", async t => {
+  const f = fixture(t, {
+    typed: true,
+    rules: { "@typescript-eslint/prefer-readonly": "error" },
+    source: `export class Counters {
+ private prefixIncrement = 0;
+ private postfixIncrement = 0;
+ private prefixDecrement = 0;
+ private postfixDecrement = 0;
+ private unchanged = 0;
+ tick() {
+  ++this.prefixIncrement;
+  this.postfixIncrement++;
+  --this.prefixDecrement;
+  this.postfixDecrement--;
+  return +this.unchanged;
+ }
+}
+`,
+  });
+  const expected = await oracle(f);
+  assert.equal(expected.messages.length, 1);
+  assert.match(expected.messages[0].message, /unchanged/);
+  const actual = run(f);
+  assert.equal(actual.status, 1, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
+});
+
+test("nodes returned inside callback objects preserve identity and synthetic children", async t => {
+  const f = fixture(t, {
+    typed: true,
+    rules: {},
+    source: `interface Parent<T> { parent: T }
+declare namespace Types { interface Base<T> { base: T } }
+export interface Box<T extends string = string> extends Parent<T>, Types.Base<string> {
+ value?: T;
+ nested: Map<string, ReadonlyArray<T | undefined>>;
+ convert<U>(input: U): [T, U];
+}
+`,
+    extraConfig: `{plugins: {probe: {rules: {children: {meta: {schema: []}, create(context) {
+      const services = context.sourceCode.parserServices;
+      return {TSInterfaceDeclaration(node) {
+        const children = [];
+        function visit(child) {
+          children.push([child.kind, child.getStart(), child.end, child.getText()]);
+          child.getChildren().some(descendant => { visit(descendant); return false; });
+        }
+        const declaration = services.esTreeNodeToTSNodeMap.get(node);
+        const applications = declaration.heritageClauses?.flatMap(clause =>
+          clause.types.map(type => ({node: type}))) ?? [];
+        applications.forEach(application => {
+          if (application.node !== declaration.heritageClauses.flatMap(clause => [...clause.types]).find(type => type.pos === application.node.pos))
+            throw new Error('Callback changed node identity');
+          visit(application.node);
+        });
+        context.report({node: node.id, message: JSON.stringify(children)});
+      }};
+    }}}}}, rules: {'probe/children': 'warn'}}`,
+  });
+  const expected = await oracle(f);
+  assert.equal(expected.messages.length, 3);
+  const actual = run(f);
+  assert.equal(actual.status, 0, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
+});
+
 test("tuple minimum lengths distinguish empty, optional, required, rest, and variadic elements", async t => {
   const f = fixture(t, {
     typed: true,
