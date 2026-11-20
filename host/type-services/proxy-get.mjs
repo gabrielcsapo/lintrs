@@ -44,11 +44,13 @@ const typeProperties = {
   default: "getDefault",
   trueType: "getTrueType",
   falseType: "getFalseType",
-  typeParameter: "getTypeParameter",
-  constraintType: "getConstraintType",
-  nameType: "getNameType",
-  templateType: "getTemplateType",
   resolvedBaseTypes: "getBaseTypes",
+};
+const mappedTypeProperties = {
+  typeParameter: "getTypeParameterOfMappedType",
+  constraintType: "getConstraintTypeOfMappedType",
+  nameType: "getNameTypeOfMappedType",
+  templateType: "getTemplateTypeOfMappedType",
 };
 const typeMethods = {
   isUnion: "isUnionType",
@@ -239,6 +241,17 @@ export function createGetHandler(ctx) {
               target.value < 0n ? -target.value : target.value,
             ),
           };
+        if (
+          mappedTypeProperties[key] !== undefined &&
+          (target.objectFlags & sdk.api.ObjectFlags.Mapped) !== 0
+        )
+          return ctx.wrap(
+            target.objectRegistry.fetchOptionalType(
+              target,
+              mappedTypeProperties[key],
+              target[key],
+            ),
+          );
         if (typeProperties[key] !== undefined) {
           const result = target[typeProperties[key]]();
           if (key === "types") ctx.indexUnion(target, result);
