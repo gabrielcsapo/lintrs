@@ -20,6 +20,91 @@ import {
   binary,
 } from "./test-support/fixture.mjs";
 
+test("configured globals preserve writability and disabled names", async t => {
+  const f = fixture(t, {
+    rules: { "no-undef": "error", "no-global-assign": "error" },
+    source:
+      "configuredReadOnly = 1; configuredWritable = 1; configuredLegacy = 1; disabled = 1; globalThis; Promise; console; window;\n",
+    extraConfig: `{
+      languageOptions: {globals: {
+        configuredReadOnly: 'readonly',
+        configuredWritable: true,
+        configuredLegacy: 'writeable',
+        disabled: 'off',
+      }},
+    }`,
+  });
+  const expected = await oracle(f);
+  assert.equal(expected.messages.length, 4);
+  const actual = run(f);
+  assert.equal(actual.status, 1, actual.stderr);
+  assert.deepEqual(
+    JSON.parse(actual.stdout)[0].messages.map(comparable),
+    expected.messages.map(comparable),
+  );
+});
+
+test("configured globals remain isolated between files", async t => {
+  const f = fixture(t, {
+    rules: { "no-undef": "error" },
+    source: "firstOnly; secondOnly;\n",
+    extraConfig: `{
+      files: ['**/sample.ts'],
+      languageOptions: {globals: {firstOnly: false}},
+    }, {
+      files: ['**/second.ts'],
+      languageOptions: {globals: {secondOnly: 'readable'}},
+    }`,
+  });
+  const second = join(f.dir, "second.ts");
+  writeFileSync(second, f.source);
+  const expectedFirst = await oracle(f);
+  const expectedSecond = await oracle({ ...f, file: second });
+  assert.equal(expectedFirst.messages.length, 1);
+  assert.equal(expectedSecond.messages.length, 1);
+  const actual = run(f, [second]);
+  assert.equal(actual.status, 1, actual.stderr);
+  const results = JSON.parse(actual.stdout);
+  for (const expected of [expectedFirst, expectedSecond]) {
+    const result = results.find(
+      result => result.filePath === expected.filePath,
+    );
+    assert.ok(result);
+    assert.deepEqual(
+      result.messages.map(comparable),
+      expected.messages.map(comparable),
+    );
+  }
+});
+
+test("JavaScript standard globals follow ECMAScript version and CommonJS source type", async t => {
+  for (const [ecmaVersion, sourceType, count] of [
+    [5, "script", 5],
+    [2015, "module", 4],
+    [2024, "module", 3],
+    [2024, "commonjs", 1],
+  ]) {
+    await t.test(`${ecmaVersion} ${sourceType}`, async t => {
+      const f = fixture(t, {
+        rules: { "no-undef": "error" },
+        source: "Promise; globalThis; require; module; window;\n",
+      });
+      writeFileSync(
+        f.config,
+        `export default [{files: ['**/*.ts'], languageOptions: {ecmaVersion: ${ecmaVersion}, sourceType: '${sourceType}'}, rules: {'no-undef': 'error'}}];`,
+      );
+      const expected = await oracle(f);
+      assert.equal(expected.messages.length, count);
+      const actual = run(f);
+      assert.equal(actual.status, 1, actual.stderr);
+      assert.deepEqual(
+        JSON.parse(actual.stdout)[0].messages.map(comparable),
+        expected.messages.map(comparable),
+      );
+    });
+  }
+});
+
 test("file reports include clean files hidden by quiet output", t => {
   const f = fixture(t, {
     rules: { "no-debugger": "error" },
