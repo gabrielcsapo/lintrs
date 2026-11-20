@@ -72,6 +72,8 @@ test("TIMING reports per-rule time on stderr without changing results", t => {
   assert.ok(Number(rows.get("@typescript-eslint/await-thenable")[CALLS]) > 0);
   assert.equal(rows.get("no-debugger")[CALLS], "0");
   assert.equal(rows.get("no-debugger")[3], "js");
+  assert.match(timed.stderr, /^Configuration load\s+\|/mu);
+  assert.match(timed.stderr, /^File configuration\s+\|/mu);
   assert.match(timed.stderr, /^Type services setup\s+\|/mu);
   // Typed rules go through the adapter; its entries are labelled.
   assert.match(timed.stderr, /^Adapter entry\s+\|/mu);
@@ -101,6 +103,8 @@ test("TIMING merges --concurrency worker threads", t => {
   const rows = timingRows(timed.stderr);
   assert.ok(rows.has("no-debugger"), timed.stderr);
   assert.ok(rows.has("@typescript-eslint/await-thenable"), timed.stderr);
+  assert.match(timed.stderr, /^Configuration load\s+\|/mu);
+  assert.match(timed.stderr, /^File configuration\s+\|/mu);
 });
 
 test("LINTRS_TYPE_PROFILE gains the per-rule timing summary", t => {
@@ -128,5 +132,17 @@ test("LINTRS_TYPE_PROFILE gains the per-rule timing summary", t => {
   assert.ok(rule.topCheckerMethods.length > 0);
   assert.ok(rule.topAdapterEntries.length > 0);
   assert.ok(profile.timing.adapterEntries.length > 0);
+  for (const name of [
+    "Host imports",
+    "Configuration load",
+    "File discovery",
+    "Configuration scoping",
+    "File configuration",
+    "Inline configuration",
+    "Type service initialization",
+  ]) {
+    const phase = profile.timing.phases.find(row => row.phase === name);
+    assert.ok(phase?.totalMs > 0, `${name} is timed`);
+  }
   assert.ok(profile.timing.wallMs >= profile.timing.attributedMs);
 });

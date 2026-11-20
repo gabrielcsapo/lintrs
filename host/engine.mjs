@@ -208,8 +208,15 @@ async function lint(
     root,
   } = loadedConfig ?? (await loadConfig(configPath));
   let configs = baseConfigs;
-  const files = selectFiles(paths, configs);
-  const overrides = inlineOverrides ?? inlineConfigs(files, configs, rules);
+  const files =
+    profile?.phase("File configuration", () => selectFiles(paths, configs)) ??
+    selectFiles(paths, configs);
+  const overrides =
+    inlineOverrides ??
+    profile?.phase("Inline configuration", () =>
+      inlineConfigs(files, configs, rules),
+    ) ??
+    inlineConfigs(files, configs, rules);
   if (overrides.size > 0)
     configs = {
       getConfig: file => overrides.get(file) ?? baseConfigs.getConfig(file),
@@ -488,7 +495,9 @@ async function lint(
     throw new HostWorkerRecycleRequired(
       "A different rule registry requires a fresh worker",
     );
-  services ??= await createTypeServices({ configs, files: scriptFiles, root });
+  services ??= await (profile?.phaseAsync("Type service initialization", () =>
+    createTypeServices({ configs, files: scriptFiles, root }),
+  ) ?? createTypeServices({ configs, files: scriptFiles, root }));
   const oxlintRoot = dirname(require.resolve("oxlint/package.json"));
   const bindings = await import(
     pathToFileURL(join(oxlintRoot, "dist/bindings.js")).href
