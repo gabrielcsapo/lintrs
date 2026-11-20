@@ -65,7 +65,7 @@ export function createWrap(ctx) {
       typeof value.kind === "number" && typeof value.pos === "number";
     // Node identity by (file path, index); see NodeProxies. The id string is
     // only built when needed (no path/index, or compact declarations).
-    const tracked = isNode && !resolvedCompact;
+    const tracked = isNode && value.pos >= 0 && !resolvedCompact;
     const path = tracked ? value.sourceFile?.path : undefined;
     const index = tracked ? value.index : undefined;
     const id = () => value.id;
