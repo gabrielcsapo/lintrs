@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 
@@ -6,6 +7,27 @@ import { createFlags, translateFlags } from "./type-services/flags.mjs";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
+
+test("importing the type adapter does not load the fallback compiler", () => {
+  const adapter = new URL("./type-services/adapter.mjs", import.meta.url);
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+      import assert from "node:assert/strict";
+      import { createRequire } from "node:module";
+      const require = createRequire(process.argv[1]);
+      await import(process.argv[1]);
+      assert.equal(require.cache[require.resolve("typescript")] === undefined, true);
+    `,
+      adapter.href,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+});
 
 test("createFlags uses the consumer TypeScript flag layout", () => {
   const source = {
