@@ -14,7 +14,12 @@ import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.mjs";
 import { createNativeLibraryResolver } from "./native/resolve.mjs";
 import { createGraphQLHost } from "./graphql.mjs";
-import { inlineConfigs } from "./inline-config.mjs";
+import {
+  applyInlineGlobals,
+  hasInlineGlobals,
+  inlineConfigs,
+  inlineGlobalsForConfig,
+} from "./inline-config.mjs";
 import { profiler } from "./profile.mjs";
 import { createTypeServices } from "./type-services.mjs";
 
@@ -40,6 +45,7 @@ function globalsForConfig(config) {
         ...standardGlobals[`es${version}`],
         ...(sourceType === "commonjs" ? standardGlobals.commonjs : {}),
         ...globals,
+        ...inlineGlobalsForConfig(config),
       }).map(([name, value]) => [
         name,
         value === true || value === "writeable" || value === "writable"
@@ -296,6 +302,7 @@ async function lint(
         if (severity === 0 || (quiet && severity === 1)) return {};
         if (!current.normalized) {
           normalizeVisitorFields(context.sourceCode);
+          applyInlineGlobals(context.sourceCode, current.config);
           current.normalized = true;
         }
         const sourceCode = (current.sourceCode ??=
@@ -668,6 +675,7 @@ async function lint(
       messages,
       usedDeprecatedRules: deprecatedRules(config, rules),
       noInlineConfig: config.linterOptions?.noInlineConfig === true,
+      handledInlineGlobals: hasInlineGlobals(config),
       reportUnusedDisableDirectives:
         config.linterOptions?.reportUnusedDisableDirectives ?? 1,
       reportUnusedInlineConfigs:
@@ -739,6 +747,7 @@ async function lint(
       messages,
       usedDeprecatedRules: deprecatedRules(config, rules),
       noInlineConfig: config.linterOptions?.noInlineConfig === true,
+      handledInlineGlobals: hasInlineGlobals(config),
       reportUnusedDisableDirectives:
         config.linterOptions?.reportUnusedDisableDirectives ?? 1,
       reportUnusedInlineConfigs:

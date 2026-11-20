@@ -20,6 +20,81 @@ import {
   binary,
 } from "./test-support/fixture.mjs";
 
+test("inline globals preserve declarations, writability and disabled names", async t => {
+  for (const [source, count] of [
+    [
+      "/* global allowed, writable: true, disabled: off -- explanation */\nallowed = 1; writable = 1; disabled;\n",
+      2,
+    ],
+    [
+      "/* globals hidden: off */\nconst text = '/* global phantom */'; phantom; hidden;\n",
+      2,
+    ],
+    [
+      "/* global repeated: writable */\n/* global repeated: readonly */\nrepeated = 1;\n",
+      1,
+    ],
+  ]) {
+    await t.test(source.split("\n")[0], async t => {
+      const f = fixture(t, {
+        rules: { "no-undef": "error", "no-global-assign": "error" },
+        source,
+        extraConfig: "{ languageOptions: { globals: { hidden: 'readonly' } } }",
+      });
+      const expected = await oracle(f);
+      assert.equal(expected.messages.length, count);
+      const actual = run(f);
+      assert.equal(actual.status, 1, actual.stderr);
+      assert.deepEqual(
+        JSON.parse(actual.stdout)[0].messages.map(comparable),
+        expected.messages.map(comparable),
+      );
+    });
+  }
+});
+
+test("inline globals retain explicit declaration comments for unused-variable reports", async t => {
+  const f = fixture(t, {
+    rules: { "no-unused-vars": "error", "no-undef": "error" },
+    source: "/* global used, unused */\nused;\n",
+  });
+  const expected = await oracle(f);
+  assert.equal(expected.messages.length, 1);
+  const actual = run(f);
+  assert.equal(actual.status, 1, actual.stderr);
+  assert.deepEqual(
+    JSON.parse(actual.stdout)[0].messages.map(comparable),
+    expected.messages.map(comparable),
+  );
+});
+
+test("inline globals remain isolated between worker files", async t => {
+  const f = fixture(t, {
+    rules: { "no-undef": "error" },
+    source:
+      "/* global __dirname: readonly -- CommonJS test location. */\n__dirname;\n",
+  });
+  const second = join(f.dir, "second.ts");
+  writeFileSync(second, "__dirname;\n");
+  const expectedFirst = await oracle(f);
+  const expectedSecond = await oracle({ ...f, file: second });
+  assert.equal(expectedFirst.messages.length, 0);
+  assert.equal(expectedSecond.messages.length, 1);
+  const actual = run(f, [second, "--concurrency", "2"]);
+  assert.equal(actual.status, 1, actual.stderr);
+  const results = JSON.parse(actual.stdout);
+  for (const expected of [expectedFirst, expectedSecond]) {
+    const result = results.find(
+      result => result.filePath === expected.filePath,
+    );
+    assert.ok(result);
+    assert.deepEqual(
+      result.messages.map(comparable),
+      expected.messages.map(comparable),
+    );
+  }
+});
+
 test("configured globals preserve writability and disabled names", async t => {
   const f = fixture(t, {
     rules: { "no-undef": "error", "no-global-assign": "error" },
