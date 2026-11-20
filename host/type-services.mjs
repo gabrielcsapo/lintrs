@@ -15,9 +15,10 @@ import { loadSdk } from "./type-services/sdk.mjs";
 
 export async function createTypeServices({ configs, files, root }) {
   const projects = new Map();
+  const nativeProjects = new Map();
   for (const file of files) {
     const options = configs.getConfig(file).languageOptions.parserOptions ?? {};
-    projects.set(file, projectForFile(file, options, root));
+    projects.set(file, projectForFile(file, options, root, nativeProjects));
   }
   const untyped = file => {
     const options = configs.getConfig(file).languageOptions.parserOptions ?? {};
