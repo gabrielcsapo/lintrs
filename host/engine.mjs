@@ -27,6 +27,7 @@ const require = createRequire(import.meta.url);
 const eslintRequire = createRequire(require.resolve("eslint"));
 const standardGlobals = eslintRequire("../conf/globals.js");
 const configuredGlobals = new WeakMap();
+const { SourceCode } = require("eslint");
 const registrations = new Map();
 const ruleIdentities = new WeakMap();
 let nextRuleIdentity = 0;
@@ -59,6 +60,22 @@ function globalsForConfig(config) {
   });
   configuredGlobals.set(config, options);
   return options;
+}
+
+function disableDirectivesFor(sourceCode) {
+  let directives;
+  return () => {
+    if (directives === undefined) {
+      const compatible = new SourceCode({
+        text: sourceCode.text,
+        ast: sourceCode.ast,
+        scopeManager: sourceCode.scopeManager,
+        visitorKeys: sourceCode.visitorKeys,
+      });
+      directives = compatible.getDisableDirectives();
+    }
+    return directives;
+  };
 }
 
 function registrationFor(rules) {
@@ -312,26 +329,33 @@ async function lint(
           applyInlineGlobals(context.sourceCode, current.config);
           current.normalized = true;
         }
-        const sourceCode = (current.sourceCode ??=
-          services === undefined
-            ? context.sourceCode
-            : Object.create(context.sourceCode, {
-                parserServices: {
-                  value: (current.services ??= profile
-                    ? profile.phase("Type services setup", () =>
-                        services(
+        const sourceCode = (current.sourceCode ??= Object.create(
+          context.sourceCode,
+          {
+            getDisableDirectives: {
+              value: disableDirectivesFor(context.sourceCode),
+            },
+            ...(services === undefined
+              ? {}
+              : {
+                  parserServices: {
+                    value: (current.services ??= profile
+                      ? profile.phase("Type services setup", () =>
+                          services(
+                            current.filePath,
+                            context.sourceCode,
+                            current.config,
+                          ),
+                        )
+                      : services(
                           current.filePath,
                           context.sourceCode,
                           current.config,
-                        ),
-                      )
-                    : services(
-                        current.filePath,
-                        context.sourceCode,
-                        current.config,
-                      )),
-                },
-              }));
+                        )),
+                  },
+                }),
+          },
+        ));
         const adapted = Object.create(context, {
           id: { value: id },
           options: { value: setting.slice(1) },
