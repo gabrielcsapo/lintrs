@@ -52,10 +52,13 @@ async function main() {
     )
       process.env.NODE_COMPILE_CACHE = cache.directory;
   }
-  const { lint } = await import("./parallel.mjs");
   const profile = profiler();
   const profiles = [];
   const started = performance.now();
+  const { lint } = await (profile?.phaseAsync(
+    "Host imports",
+    () => import("./parallel.mjs"),
+  ) ?? import("./parallel.mjs"));
   let results = await lint({
     configPath: values.config,
     paths: positionals,

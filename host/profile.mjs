@@ -177,6 +177,15 @@ export function createProfiler({ now = () => performance.now() } = {}) {
     },
     /** Runs fn as engine phase `name`. */
     phase: (name, fn) => run({ kind: "phase", key: name }, fn),
+    /** Runs sequential asynchronous engine work as phase `name`. */
+    async phaseAsync(name, fn) {
+      const frame = enter({ kind: "phase", key: name });
+      try {
+        return await fn();
+      } finally {
+        exit(frame);
+      }
+    },
     /** Bills fn to the enclosing rule or phase under `bucket`. */
     charge(bucket, label, fn) {
       // Inside a charge of the same bucket (adapter code calling adapter

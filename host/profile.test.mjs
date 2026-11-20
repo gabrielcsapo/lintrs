@@ -115,6 +115,55 @@ test("checker calls outside any rule or phase are still accounted", () => {
   );
 });
 
+test("async phases account across awaits and exclude nested work", async () => {
+  const { now, spend } = clock();
+  const profile = createProfiler({ now });
+  const result = await profile.phaseAsync("Configuration load", async () => {
+    spend(3);
+    await Promise.resolve();
+    profile.phase("Configuration validation", () => spend(5));
+    profile.charge("checker", "initialize", () => spend(2));
+    spend(4);
+    return 42;
+  });
+  profile.rule("a/rule", () => spend(6));
+  assert.equal(result, 42);
+  const summary = summarize(profile.snapshot());
+  assert.deepEqual(
+    summary.phases.map(({ phase, ownMs, checkerMs, totalMs }) => ({
+      phase,
+      ownMs,
+      checkerMs,
+      totalMs,
+    })),
+    [
+      { phase: "Configuration load", ownMs: 7, checkerMs: 2, totalMs: 9 },
+      { phase: "Configuration validation", ownMs: 5, checkerMs: 0, totalMs: 5 },
+    ],
+  );
+  assert.equal(summary.rules[0].totalMs, 6);
+  assert.equal(summary.attributedMs, 20);
+});
+
+test("a rejected async phase restores accounting for later work", async () => {
+  const { now, spend } = clock();
+  const profile = createProfiler({ now });
+  const error = new Error("configuration failed");
+  await assert.rejects(
+    profile.phaseAsync("Configuration load", async () => {
+      await Promise.resolve();
+      spend(3);
+      throw error;
+    }),
+    failure => failure === error,
+  );
+  profile.rule("a/rule", () => spend(4));
+  const summary = summarize(profile.snapshot());
+  assert.equal(summary.phases[0].totalMs, 3);
+  assert.equal(summary.rules[0].totalMs, 4);
+  assert.equal(summary.attributedMs, 7);
+});
+
 test("worker snapshots merge by summing time and taking the longest wall", () => {
   const worker = () => {
     const { now, spend } = clock();
