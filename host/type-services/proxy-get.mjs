@@ -182,6 +182,13 @@ export function createGetHandler(ctx) {
         if (isSymbol) return flags.symbol(target.flags);
       }
       if (isType) {
+        if (
+          key === "type" &&
+          (target.flags &
+            (sdk.api.TypeFlags.Index | sdk.api.TypeFlags.StringMapping)) !==
+            0
+        )
+          return ctx.wrap(target.getTarget());
         if (key === "minLength" && target.fixedLength !== undefined)
           return (target.elementFlags ?? []).filter(
             flag =>
@@ -336,6 +343,14 @@ export function createGetHandler(ctx) {
         : ctx.wrap(item);
     },
     has(target, key) {
+      if (
+        isType &&
+        key === "type" &&
+        (target.flags &
+          (sdk.api.TypeFlags.Index | sdk.api.TypeFlags.StringMapping)) !==
+          0
+      )
+        return true;
       if (isType && target[key] === undefined) return false;
       return Reflect.has(target, key);
     },
