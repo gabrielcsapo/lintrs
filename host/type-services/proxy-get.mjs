@@ -249,7 +249,7 @@ export function createGetHandler(ctx) {
             target.objectRegistry.fetchOptionalType(
               target,
               mappedTypeProperties[key],
-              target[key],
+              target[key] ?? false,
             ),
           );
         if (typeProperties[key] !== undefined) {
@@ -349,6 +349,12 @@ export function createGetHandler(ctx) {
         : ctx.wrap(item);
     },
     has(target, key) {
+      if (
+        isType &&
+        key === "typeParameter" &&
+        (target.objectFlags & sdk.api.ObjectFlags.Mapped) !== 0
+      )
+        return true;
       if (isType && target[key] === undefined) return false;
       return Reflect.has(target, key);
     },

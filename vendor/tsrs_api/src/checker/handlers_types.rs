@@ -155,6 +155,12 @@ fn type_property(t: P<Type>, property: TypeProperty) -> CheckerResult<Option<P<T
 pub(crate) fn resolve_type_property(host: &dyn CheckerHost, p: &Params, property: TypeProperty) -> CheckerResult<Value> {
     let mut s = setup(host, p)?;
     let t = s.resolve_type(p.u32("objectId")?)?;
+    if let TypeProperty::MappedConstraintType = property {
+        let mapped = tagged(t, TypeDataTag::Mapped)?.as_mapped_type();
+        if mapped.constraint_type().is_none() && let Some(parameter) = mapped.type_parameter() {
+            mapped.constraint_type.set(s.checker.get_constraint_of_type_parameter(parameter));
+        }
+    }
     let result = type_property(t, property)?;
     s.opt_type_response(result)
 }
