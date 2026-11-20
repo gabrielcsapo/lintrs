@@ -27,6 +27,8 @@ with the Rust checker. Files must exist on disk; custom compiler hosts and
 in-memory source overrides are not reproduced. Referenced projects need their
 built declaration outputs. Rules see the TypeScript enum layout installed in
 the linted project, with lintrs's bundled TypeScript as a fallback.
+Explicit library filenames from provided programs are translated to Rust
+checker aliases; rules still see the original compiler options.
 
 Lintrs-specific configurations can provide `parserOptions.lintrsProjects`
 instead of constructing JavaScript TypeScript programs. Each entry contains
