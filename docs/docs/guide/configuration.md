@@ -25,6 +25,8 @@ with the Rust checker. Files must exist on disk; custom compiler hosts and
 in-memory source overrides are not reproduced. Referenced projects need their
 built declaration outputs. Rules see the TypeScript enum layout installed in
 the linted project, with lintrs's bundled TypeScript as a fallback.
+Explicit library filenames from provided programs are translated to Rust
+checker aliases; rules still see the original compiler options.
 
 Every enabled rule runs on every file it covers. lintrs never runs oxlint's
 built-in rules and ignores `oxlint-disable` comments.
