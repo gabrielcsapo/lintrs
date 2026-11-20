@@ -2,6 +2,35 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+// Identity-based config hashes must not expand every project root into each
+// import resolver cache key. Keep the metadata readable and JSON-serializable.
+class NativeProject {
+  constructor(project) {
+    Object.assign(this, project);
+  }
+}
+
+function compactProjects(config, projects) {
+  if (Array.isArray(config))
+    return config.map(entry => compactProjects(entry, projects));
+  const options = config?.languageOptions?.parserOptions;
+  if (!Array.isArray(options?.lintrsProjects)) return config;
+  return {
+    ...config,
+    languageOptions: {
+      ...config.languageOptions,
+      parserOptions: {
+        ...options,
+        lintrsProjects: options.lintrsProjects.map(project => {
+          if (!projects.has(project))
+            projects.set(project, new NativeProject(project));
+          return projects.get(project);
+        }),
+      },
+    },
+  };
+}
+
 export async function loadConfig(
   path,
   exportName = process.env.LINTRS_CONFIG_EXPORT ?? "default",
@@ -20,7 +49,10 @@ export async function loadConfig(
   if (imported === undefined)
     throw new Error(`Configuration ${entry} has no export ${exportName}`);
   const configs = new FlatConfigArray(
-    typeof imported === "function" ? await imported() : imported,
+    compactProjects(
+      typeof imported === "function" ? await imported() : imported,
+      new WeakMap(),
+    ),
     { basePath: dirname(entry) },
   );
   await configs.normalize();
