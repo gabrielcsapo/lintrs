@@ -1,6 +1,6 @@
 {
   "name": "lintrs-workspace",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "Run ESLint-compatible rules with Rust parsing and native TypeScript type services",
   "license": "MIT",
