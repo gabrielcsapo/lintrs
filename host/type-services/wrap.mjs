@@ -37,6 +37,7 @@ export function createWrap(ctx) {
     sourceFileBody = false,
   ) {
     if (value === null || typeof value !== "object") return value;
+    if (originals.has(value)) return value;
     if (sourceFileResolvers.has(value)) return value;
     if (symbolFacts?.compact && compactOriginals.has(value)) return value;
     if (lazy !== undefined && !legacy) {

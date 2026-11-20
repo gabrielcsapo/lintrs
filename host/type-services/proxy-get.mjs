@@ -138,6 +138,19 @@ export function createGetHandler(ctx) {
           );
         return kind;
       }
+      if (
+        isNode &&
+        key === "operator" &&
+        (target.kind === sdk.ast.SyntaxKind.PrefixUnaryExpression ||
+          target.kind === sdk.ast.SyntaxKind.PostfixUnaryExpression)
+      ) {
+        const operator = kinds.get(target.operator);
+        if (operator === undefined)
+          throw new Error(
+            `Unsupported tsrs unary operator: ${sdk.ast.SyntaxKind[target.operator]}`,
+          );
+        return operator;
+      }
       if (isHeritageType && key === "expression")
         return ctx.wrap(target.typeName);
       if (isHeritageExpression && key === "expression")
