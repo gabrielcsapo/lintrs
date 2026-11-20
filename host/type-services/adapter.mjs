@@ -16,6 +16,7 @@ export function compatibility(
   contextualTypes,
   symbolFacts,
   targetTypeScript,
+  compilerOptions,
 ) {
   const ctx = {
     sdk,
@@ -61,6 +62,8 @@ export function compatibility(
   const program = new Proxy(wrap(project.program), {
     get(target, key) {
       if (key === "getTypeChecker") return () => checker;
+      if (key === "getCompilerOptions" && compilerOptions !== undefined)
+        return () => compilerOptions;
       if (key === "getRootFileNames")
         return () => project.parsedCommandLine.fileNames;
       if (key === "getSourceFiles")
