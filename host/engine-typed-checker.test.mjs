@@ -35,6 +35,41 @@ test("readonly checks recognize prefix and postfix mutations", async t => {
   assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
 });
 
+test("token and keyword fields use TypeScript's SyntaxKind numbering", async t => {
+  // tsrs numbers several tokens and keywords differently from TypeScript
+  // (ExtendsKeyword is 95 in tsrs, 96 in TypeScript), so each field a rule
+  // can read as a SyntaxKind must match ESLint's value exactly.
+  const f = fixture(t, {
+    typed: true,
+    rules: {},
+    source: `import data from "./data.json" with { type: "json" };
+interface Shape {}
+class Base {}
+export class Square extends Base implements Shape {}
+export type Keys = keyof Square;
+export type Frozen = readonly string[];
+export const url = import.meta.url;
+export function count(value: number) { value++; --value; return [data, value]; }
+`,
+    extraConfig: `{plugins: {probe: {rules: {tokens: {meta: {schema: []}, create(context) {
+      const map = context.sourceCode.parserServices.esTreeNodeToTSNodeMap;
+      const report = (node, field, value) => context.report({node, message: field + ' ' + value});
+      return {
+        ClassDeclaration(node) { for (const clause of map.get(node).heritageClauses ?? []) report(node, 'token', clause.token); },
+        MetaProperty(node) { report(node, 'keywordToken', map.get(node).keywordToken); },
+        TSTypeOperator(node) { report(node, 'operator', map.get(node).operator); },
+        ImportDeclaration(node) { report(node, 'attributes.token', map.get(node).attributes?.token); },
+        UpdateExpression(node) { report(node, 'operator', map.get(node).operator); },
+      };
+    }}}}}, rules: {'probe/tokens': 'warn'}}`,
+  });
+  const expected = await oracle(f);
+  assert.equal(expected.messages.length, 8);
+  const actual = run(f);
+  assert.equal(actual.status, 0, actual.stderr);
+  assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
+});
+
 test("nodes returned inside callback objects preserve identity and synthetic children", async t => {
   const f = fixture(t, {
     typed: true,
