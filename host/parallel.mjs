@@ -109,9 +109,14 @@ export async function lint({
   concurrency,
   profiles,
 }) {
-  const loadedConfig = await loadConfig(configPath);
+  const profile = profiler();
+  const loadedConfig = await (profile?.phaseAsync("Configuration load", () =>
+    loadConfig(configPath),
+  ) ?? loadConfig(configPath));
   const { configs } = loadedConfig;
-  const files = discoverFiles(paths, configs);
+  const files =
+    profile?.phase("File discovery", () => discoverFiles(paths, configs)) ??
+    discoverFiles(paths, configs);
   if (files.length === 0) throw new Error("No configured files selected");
   const workers = workerCount(files.length, concurrency);
   if (workers === 1)
@@ -120,7 +125,9 @@ export async function lint({
       files,
       quiet,
       requireNative,
-      loadedConfig: await scopeConfig(loadedConfig, files),
+      loadedConfig: await (profile?.phaseAsync("Configuration scoping", () =>
+        scopeConfig(loadedConfig, files),
+      ) ?? scopeConfig(loadedConfig, files)),
     });
   let scratch;
   let owner;
@@ -222,18 +229,23 @@ export async function lint({
 
 if (!isMainThread) {
   try {
-    const loadedConfig = await scopeConfig(
-      await loadConfig(workerData.configPath),
-      workerData.files,
-    );
-    const files = selectFiles(workerData.files, loadedConfig.configs, {
-      allowEmpty: true,
-    });
-    const inlineOverrides = inlineConfigs(
-      files,
-      loadedConfig.configs,
-      loadedConfig.rules,
-    );
+    const profile = profiler();
+    const loaded = await (profile?.phaseAsync("Configuration load", () =>
+      loadConfig(workerData.configPath),
+    ) ?? loadConfig(workerData.configPath));
+    const loadedConfig = await (profile?.phaseAsync(
+      "Configuration scoping",
+      () => scopeConfig(loaded, workerData.files),
+    ) ?? scopeConfig(loaded, workerData.files));
+    const select = () =>
+      selectFiles(workerData.files, loadedConfig.configs, {
+        allowEmpty: true,
+      });
+    const files = profile?.phase("File configuration", select) ?? select();
+    const configure = () =>
+      inlineConfigs(files, loadedConfig.configs, loadedConfig.rules);
+    const inlineOverrides =
+      profile?.phase("Inline configuration", configure) ?? configure();
     const libraries = new Set();
     for (const file of files)
       for (const [id, setting] of Object.entries(
