@@ -46,6 +46,51 @@ test("native helpers can be imported by a program read from stdin", () => {
   assert.equal(result.stdout.trim(), "function");
 });
 
+test(
+  "mixed native callback failures retain their cause and stop later files",
+  { skip: skipNative },
+  t => {
+    const { dir, cache } = project(t, {
+      files: { "first.ts": "export {};", "later.ts": "export {};" },
+      config: ({ crateDir }) => `
+import { appendFileSync } from 'node:fs';
+import { nativePlugin } from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+const demo = nativePlugin({name: 'demo', rules: ['value-is-string'], crate: ${JSON.stringify(crateDir)}});
+const probe = {rules: {visit: {meta: {schema: []}, create(context) {
+  appendFileSync(new URL('./visits.txt', import.meta.url), context.filename + '\\n');
+  return {};
+}}}};
+export default [{files: ['**/*.ts'], plugins: {demo, probe},
+  rules: {'demo/value-is-string': 'error', 'probe/visit': 'error'}}];`,
+    });
+    const report = join(dir, "coverage.json");
+    const result = run(
+      dir,
+      cache,
+      ["-f", "json", "--files-report", report, "first.ts", "later.ts"],
+      {
+        env: { LINTRS_OXLINT_THREADS: "1" },
+      },
+    );
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(
+      result.stderr,
+      /Native rules require .* to be included in a tsconfig project/u,
+    );
+    assert.doesNotMatch(
+      result.stderr,
+      /Rust parser or host rejected an input/u,
+    );
+    assert.equal(result.stdout, "");
+    assert.equal(existsSync(report), false);
+    const visits = readFileSync(join(dir, "visits.txt"), "utf8")
+      .trim()
+      .split("\n");
+    assert.equal(visits.length, 1);
+    assert.ok(result.stderr.includes(visits[0]));
+  },
+);
+
 // A temp lint project: package.json + tsconfig + the repo's runtime deps
 // linked in, plus a generated eslint.config.mjs.
 function project(t, { config, files, crates } = {}) {
