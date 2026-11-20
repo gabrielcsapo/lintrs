@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const defaultTypeScript = require("typescript");
 
 export function translateFlags(
   source,
@@ -39,7 +38,7 @@ export function translateFlags(
   };
 }
 
-export function createFlags(sdk, ts = defaultTypeScript) {
+export function createFlags(sdk, ts = require("typescript")) {
   const flags = {
     type: translateFlags(sdk.api.TypeFlags, ts.TypeFlags, "TypeFlags"),
     // These tsrs checker caches have no TypeScript 6 flag equivalents.
