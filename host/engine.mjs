@@ -19,12 +19,41 @@ import { profiler } from "./profile.mjs";
 import { createTypeServices } from "./type-services.mjs";
 
 const require = createRequire(import.meta.url);
+const eslintRequire = createRequire(require.resolve("eslint"));
+const standardGlobals = eslintRequire("../conf/globals.js");
+const configuredGlobals = new WeakMap();
 const registrations = new Map();
 const ruleIdentities = new WeakMap();
 let nextRuleIdentity = 0;
 let activeRules;
 
 export class HostWorkerRecycleRequired extends Error {}
+
+function globalsForConfig(config) {
+  if (configuredGlobals.has(config)) return configuredGlobals.get(config);
+  const { ecmaVersion, sourceType, globals } = config.languageOptions;
+  const version =
+    ecmaVersion >= 6 && ecmaVersion < 2015 ? ecmaVersion + 2009 : ecmaVersion;
+  const options = JSON.stringify({
+    globals: Object.fromEntries(
+      Object.entries({
+        ...standardGlobals[`es${version}`],
+        ...(sourceType === "commonjs" ? standardGlobals.commonjs : {}),
+        ...globals,
+      }).map(([name, value]) => [
+        name,
+        value === true || value === "writeable" || value === "writable"
+          ? "writable"
+          : value === "off"
+            ? "off"
+            : "readonly",
+      ]),
+    ),
+    envs: {},
+  });
+  configuredGlobals.set(config, options);
+  return options;
+}
 
 function registrationFor(rules) {
   return JSON.stringify(
@@ -532,7 +561,7 @@ async function lint(
     ids,
     options,
     settings,
-    globals,
+    _globals,
     workspace,
   ) => {
     if (failures.length > 0)
@@ -566,7 +595,7 @@ async function lint(
       ordered.map(rule => rule.id),
       ordered.map(rule => rule.options),
       JSON.stringify(config.settings ?? {}),
-      JSON.stringify(config.languageOptions.globals ?? {}),
+      globalsForConfig(config),
       workspace,
     );
     if (result !== null) {
