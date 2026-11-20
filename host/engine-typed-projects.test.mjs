@@ -56,9 +56,16 @@ test("provided programs preserve compiler overrides and declaration references i
 import plugin from 'typescript-eslint';
 const path = ${JSON.stringify(join(f.dir, "tsconfig.json"))};
 const parsed = ts.getParsedCommandLineOfConfigFile(path, {strictNullChecks: false}, {...ts.sys, onUnRecoverableConfigFileDiagnostic(d) { throw new Error(ts.flattenDiagnosticMessageText(d.messageText, '\\n')); }});
-const program = ts.createProgram({rootNames: parsed.fileNames, options: parsed.options, projectReferences: parsed.projectReferences});
-if (process.env.LINTRS_FORBID_JS_CHECKER) program.getTypeChecker = () => { throw new Error('JavaScript checker must not run'); };
-export default [{files: ['**/*.ts'], plugins: {'@typescript-eslint': plugin.plugin}, languageOptions: {parser: plugin.parser, parserOptions: {programs: [program], projectService: false}}, rules: {'@typescript-eslint/no-unsafe-unary-minus': 'error', '@typescript-eslint/no-unnecessary-condition': 'error'}}];\n`,
+let parserOptions;
+if (process.env.LINTRS_METADATA_ONLY) {
+  const {configFile, ...options} = parsed.options;
+  parserOptions = {lintrsProjects: [{fileNames: parsed.fileNames, options, projectReferences: parsed.projectReferences}], projectService: false, project: false};
+} else {
+  const program = ts.createProgram({rootNames: parsed.fileNames, options: parsed.options, projectReferences: parsed.projectReferences});
+  if (process.env.LINTRS_FORBID_JS_CHECKER) program.getTypeChecker = () => { throw new Error('JavaScript checker must not run'); };
+  parserOptions = {programs: [program], projectService: false};
+}
+export default [{files: ['**/*.ts'], plugins: {'@typescript-eslint': plugin.plugin}, languageOptions: {parser: plugin.parser, parserOptions}, rules: {'@typescript-eslint/no-unsafe-unary-minus': 'error', '@typescript-eslint/no-unnecessary-condition': 'error'}}];\n`,
   );
   const actual = spawnSync(binary, ["-c", f.config, "-f", "json", f.file], {
     cwd: f.dir,
@@ -69,6 +76,9 @@ export default [{files: ['**/*.ts'], plugins: {'@typescript-eslint': plugin.plug
   const expected = await oracle(f);
   assert.equal(expected.messages.length, 2, JSON.stringify(expected.messages));
   assert.deepEqual(JSON.parse(actual.stdout)[0], expected);
+  const metadata = run(f, [], { LINTRS_METADATA_ONLY: "1" });
+  assert.equal(metadata.status, 1, metadata.stderr);
+  assert.deepEqual(JSON.parse(metadata.stdout)[0], expected);
 });
 
 test("typed services defer node maps until a rule queries them", async t => {

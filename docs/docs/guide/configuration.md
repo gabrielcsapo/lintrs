@@ -9,7 +9,7 @@ directory, or `-c <file>`. It reads the default export (or the export named by
 - `files` / `ignores`, global ignores, per-file overrides
 - `plugins`: JavaScript plugins and [native rule plugins](./packaging)
 - `rules` with severities and options
-- `languageOptions`: `parserOptions.projectService` / `project` / `programs`, `globals`,
+- `languageOptions`: `parserOptions.projectService` / `project` / `programs` / `lintrsProjects`, `globals`,
   `parser`
 - `linterOptions.reportUnusedDisableDirectives` and `reportUnusedInlineConfigs`
 - inline `/* eslint rule: setting */` comments
@@ -25,6 +25,19 @@ with the Rust checker. Files must exist on disk; custom compiler hosts and
 in-memory source overrides are not reproduced. Referenced projects need their
 built declaration outputs. Rules see the TypeScript enum layout installed in
 the linted project, with lintrs's bundled TypeScript as a fallback.
+
+Lintrs-specific configurations can provide `parserOptions.lintrsProjects`
+instead of constructing JavaScript TypeScript programs. Each entry contains
+absolute `fileNames`, TypeScript compiler `options` with numeric enum values, and optional
+`projectReferences`, as returned by TypeScript's config-file helpers. Lintrs
+selects the first entry listing the linted file as a root, preserves these
+inputs, and constructs the program in Rust. Explicit metadata takes precedence
+over project discovery, including when `project` and `projectService` are false.
+Files outside every entry fail the run. This option is specific to Lintrs;
+ESLint still requires real `parserOptions.programs` when using provided programs.
+The host gives each metadata object a stable identity so resolver cache keys
+stay compact. Its fields and JSON representation remain available to rules;
+the original configuration objects are not mutated.
 
 Every enabled rule runs on every file it covers. lintrs never runs oxlint's
 built-in rules and ignores `oxlint-disable` comments.
@@ -81,7 +94,7 @@ report; use a fresh destination for each run.
 
 These fail with an error:
 
-- multiple explicit TypeScript projects
+- multiple matches for `parserOptions.project`
 - processors
 - inline global/exported configuration comments
 - symlinked discovery paths
