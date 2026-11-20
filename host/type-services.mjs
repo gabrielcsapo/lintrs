@@ -168,6 +168,10 @@ export async function createTypeServices({ configs, files, root }) {
             rootFiles: parsed.fileNames,
             compilerOptions: {
               ...parsed.options,
+              // TypeScript programs use filenames; tsrs recognizes library aliases.
+              lib: parsed.options.lib?.map(name =>
+                name.replace(/^lib\.(.+)\.d\.ts$/u, "$1"),
+              ),
               disableSourceOfProjectReferenceRedirect: true,
             },
             options: { projectReferences: parsed.projectReferences },
@@ -268,6 +272,7 @@ export async function createTypeServices({ configs, files, root }) {
               }
             : undefined,
           targetTypeScript,
+          typeof projectPath === "string" ? undefined : parsed.options,
         ),
       };
       snapshots.set(projectPath, entry);
