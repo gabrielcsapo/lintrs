@@ -28,11 +28,17 @@ export function unused<T extends string>(value: T) {
           const mapped = type.typeArguments?.[0];
           if (!mapped) return;
           const properties = mapped.getProperties();
-          context.report({node, message: JSON.stringify({
+          const fields = {
             properties: properties.length,
             template: mapped.templateType?.flags,
             constraint: mapped.constraintType?.flags,
             parameter: mapped.typeParameter?.flags,
+          };
+          const synthetic = checker.typeToTypeNode(mapped, undefined, undefined);
+          context.report({node, message: JSON.stringify({
+            ...fields,
+            syntheticKind: synthetic.kind,
+            syntheticPosition: synthetic.pos,
           })});
         }};
       }
