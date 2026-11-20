@@ -1,7 +1,21 @@
 import { existsSync, globSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-export function projectForFile(file, options, root) {
+const metadataKeys = new WeakMap();
+
+export function projectForFile(file, options, root, nativeProjects) {
+  if (options.lintrsProjects !== undefined) {
+    for (const project of options.lintrsProjects) {
+      if (!project.fileNames.includes(file)) continue;
+      if (nativeProjects === undefined) return project;
+      if (!metadataKeys.has(project))
+        metadataKeys.set(project, JSON.stringify(projectConfig(project)));
+      const key = metadataKeys.get(project);
+      if (!nativeProjects.has(key)) nativeProjects.set(key, project);
+      return nativeProjects.get(key);
+    }
+    throw new Error(`File is outside the provided native projects: ${file}`);
+  }
   if (options.programs !== undefined) {
     for (const program of options.programs) {
       if (program.getSourceFile(file) !== undefined) return program;
@@ -40,16 +54,22 @@ export function projectForFile(file, options, root) {
 export function projectName(project) {
   return typeof project === "string"
     ? project
-    : (project.getCompilerOptions().configFilePath ?? "<provided program>");
+    : (("fileNames" in project ? project.options : project.getCompilerOptions())
+        .configFilePath ?? "<provided program>");
 }
 
 export function projectConfig(project, api) {
   if (typeof project !== "string") {
-    const { configFile, ...options } = project.getCompilerOptions();
+    const metadata = "fileNames" in project;
+    const { configFile, ...options } = metadata
+      ? project.options
+      : project.getCompilerOptions();
     return {
-      fileNames: project.getRootFileNames(),
+      fileNames: metadata ? project.fileNames : project.getRootFileNames(),
       options,
-      projectReferences: project.getProjectReferences(),
+      projectReferences: metadata
+        ? project.projectReferences
+        : project.getProjectReferences(),
     };
   }
   const config = api.readConfigFile(project);
