@@ -724,7 +724,15 @@ async function lint(
           host.u(options);
           return null;
         },
-        lintFile,
+        (...args) => {
+          try {
+            return lintFile(...args);
+          } catch (error) {
+            const message = `${args[0]}: ${String(error)}`;
+            failures.push(new Error(message, { cause: error }));
+            return JSON.stringify({ Failure: message });
+          }
+        },
         async workspace => workspaces.createWorkspace(workspace),
         workspace => workspaces.destroyWorkspace(workspace),
         () => undefined,
