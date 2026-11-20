@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { loadConfig } from "./config.mjs";
-import { resolveNativeLibrary } from "./native/resolve.mjs";
+import { createNativeLibraryResolver } from "./native/resolve.mjs";
 import { createGraphQLHost } from "./graphql.mjs";
 import { inlineConfigs } from "./inline-config.mjs";
 import { profiler } from "./profile.mjs";
@@ -251,6 +251,7 @@ async function lint(
   const wrappedRules = {};
   const nativeRules = new Map();
   const nativeLibraries = new Map();
+  const resolveLibrary = createNativeLibraryResolver();
   for (const [index, [id, rule]] of [...rules].entries()) {
     if (rule.meta?.lintrs?.native === true) {
       nativeRules.set(id, rule);
@@ -365,10 +366,7 @@ async function lint(
       const severity = setting[0] ?? 0;
       if (severity === 0 || (quiet && severity === 1)) continue;
       if (!nativeLibraries.has(rule.meta.lintrs))
-        nativeLibraries.set(
-          rule.meta.lintrs,
-          resolveNativeLibrary(rule.meta.lintrs),
-        );
+        nativeLibraries.set(rule.meta.lintrs, resolveLibrary(rule.meta.lintrs));
       libraries.add(nativeLibraries.get(rule.meta.lintrs));
       const options = setting.slice(1);
       const normalized = options.length === 1 ? options[0] : options;

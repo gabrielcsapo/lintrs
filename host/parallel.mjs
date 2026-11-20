@@ -13,7 +13,7 @@ import {
 } from "node:worker_threads";
 
 import { loadConfig } from "./config.mjs";
-import { resolveNativeLibrary } from "./native/resolve.mjs";
+import { createNativeLibraryResolver } from "./native/resolve.mjs";
 import { discoverFiles, selectFiles } from "./engine.mjs";
 import { tsrsSdkRoot } from "./type-services/sdk.mjs";
 import { profiler } from "./profile.mjs";
@@ -189,13 +189,10 @@ export async function lint({
     const preparations = await Promise.all(running.map(item => item.prepared));
     const selected = preparations.flatMap(item => item.files);
     if (selected.length === 0) throw new Error("No configured files selected");
-    const resolved = new Set();
+    const resolveLibrary = createNativeLibraryResolver();
     for (const preparation of preparations)
       for (const meta of preparation.libraries) {
-        const key = JSON.stringify(meta);
-        if (resolved.has(key)) continue;
-        resolved.add(key);
-        resolveNativeLibrary(meta);
+        resolveLibrary(meta);
       }
     for (const item of running) item.worker.postMessage("start");
     const results = (
