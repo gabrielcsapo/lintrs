@@ -13,6 +13,8 @@ directory, or `-c <file>`. It reads the default export (or the export named by
   `parser`
 - `linterOptions.reportUnusedDisableDirectives` and `reportUnusedInlineConfigs`
 - inline `/* eslint rule: setting */` comments
+- inline `/* global name: readonly */` and `/* globals name: writable */`
+  declarations, including `off` values and `--` justifications
 - `eslint-disable`, `eslint-disable-next-line`, `eslint-enable`, with `--`
   justifications
 
@@ -83,5 +85,6 @@ These fail with an error:
 
 - multiple explicit TypeScript projects
 - processors
-- inline global/exported configuration comments
+- inline `/* exported */` comments
+- inline global declarations with `linterOptions.noInlineConfig`
 - symlinked discovery paths

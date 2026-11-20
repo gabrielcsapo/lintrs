@@ -21,6 +21,8 @@ pub struct HostFile {
     used_deprecated_rules: Vec<serde_json::Value>,
     skipped_rules: HashSet<String>,
     no_inline_config: bool,
+    #[serde(default)]
+    handled_inline_globals: bool,
     report_unused_disable_directives: u8,
     report_unused_inline_configs: u8,
 }
@@ -123,12 +125,17 @@ fn finalize_file(file: HostFile, known_rules: &HashSet<String>) -> anyhow::Resul
         .extension()
         .is_some_and(|extension| extension == "graphql");
     let comments = source_comments(&file.file_path, &file.text)?;
+    let is_global = |comment: &Comment| {
+        comment.kind == CommentKind::Block
+            && matches!(
+                comment.value.split_whitespace().next(),
+                Some("global" | "globals")
+            )
+    };
     for comment in &comments {
         let value = comment.value.trim();
-        if (comment.kind == CommentKind::Block
-            && (value.starts_with("global ")
-                || value.starts_with("globals ")
-                || value.starts_with("exported ")))
+        if (is_global(comment) && (!file.handled_inline_globals || file.no_inline_config))
+            || (comment.kind == CommentKind::Block && value.starts_with("exported "))
             || (file.no_inline_config && value.starts_with("eslint-"))
         {
             bail!(
@@ -142,7 +149,10 @@ fn finalize_file(file: HostFile, known_rules: &HashSet<String>) -> anyhow::Resul
     let index = LineIndex::with_js_line_terminators(&file.text, !is_graphql);
     let disable_comments: Vec<_> = comments
         .iter()
-        .filter(|comment| !comment.value.trim().starts_with("eslint "))
+        .filter(|comment| {
+            !(comment.value.trim().starts_with("eslint ")
+                || file.handled_inline_globals && is_global(comment))
+        })
         .cloned()
         .collect();
     let directives = directives::collect(
@@ -288,6 +298,35 @@ mod tests {
     use std::path::PathBuf;
 
     use super::select_host_dir;
+
+    #[test]
+    fn global_comments_require_host_acknowledgement() {
+        for label in ["global", "globals"] {
+            for separator in [" ", "\n"] {
+                let mut input = serde_json::json!({
+                    "files": [{
+                        "filePath": "sample.ts",
+                        "text": format!("/* {label}{separator}value: readonly */\nvalue;\n"),
+                        "messages": [],
+                        "usedDeprecatedRules": [],
+                        "skippedRules": [],
+                        "noInlineConfig": false,
+                        "reportUnusedDisableDirectives": 0,
+                        "reportUnusedInlineConfigs": 0,
+                    }],
+                    "knownRules": [],
+                });
+                assert!(super::finalize(serde_json::from_value(input.clone()).unwrap()).is_err());
+                input["files"][0]["handledInlineGlobals"] = serde_json::json!(true);
+                let results =
+                    super::finalize(serde_json::from_value(input.clone()).unwrap()).unwrap();
+                assert_eq!(results.len(), 1);
+                assert!(results[0].messages.is_empty());
+                input["files"][0]["noInlineConfig"] = serde_json::json!(true);
+                assert!(super::finalize(serde_json::from_value(input).unwrap()).is_err());
+            }
+        }
+    }
 
     #[test]
     fn comments_accept_top_level_returns_from_typescript_parser() {
