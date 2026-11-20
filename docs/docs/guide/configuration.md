@@ -48,10 +48,13 @@ This avoids resolving every file's configuration serially and keeps Cargo
 processes ahead of Oxlint's large parser allocations. Unmatched files and empty
 worker slices do not produce lint results; a run with no configured files fails.
 
-Before matching, lintrs removes file patterns whose literal path prefixes cannot
-contain any candidate path. ESLint still performs the actual glob matches,
-ignore checks, configuration merges and validation. Function patterns, escaped
-patterns and prefixes containing glob syntax are retained conservatively.
+Before matching, lintrs removes file and ignore patterns that cannot match the
+candidate paths. It checks literal prefixes and, for simple globs, whether the
+required path segments can occur in order. Repeated patterns share these checks.
+The segment check includes ancestors, preserving global directory ignores.
+ESLint still performs actual matching, ignore checks, merges and validation.
+Function patterns, escaped patterns, negation and complex glob segments are
+retained conservatively.
 
 ## Module compilation cache
 
