@@ -5,6 +5,19 @@ import { join, resolve } from "node:path";
 import { buildCrate, platformKey } from "./build.mjs";
 import { nativeAbi } from "./home.mjs";
 
+// Keep this cache local to a lint invocation so later jobs still observe edits.
+export function createNativeLibraryResolver(
+  resolveLibrary = resolveNativeLibrary,
+) {
+  const libraries = new Map();
+  return meta => {
+    const { root, crate, prebuilt } = meta;
+    const key = JSON.stringify([root, crate, prebuilt]);
+    if (!libraries.has(key)) libraries.set(key, resolveLibrary(meta));
+    return libraries.get(key);
+  };
+}
+
 // meta.lintrs → the rule library on disk. Prebuilt packages are resolved
 // through Node resolution from the plugin's root; otherwise the crate is
 // built (and cached) from source.

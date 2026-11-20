@@ -117,6 +117,35 @@ function run(dir, cache, args, { restricted = false, env = {} } = {}) {
   });
 }
 
+test(
+  "rules sharing a crate validate it once per invocation",
+  { skip: skipNative },
+  t => {
+    const { dir, cache } = project(t, {
+      files: { "case.ts": "const oldName = 1;" },
+      config: ({ dir, crateDir }) => `
+import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
+import {nativePlugin} from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+const read = fs.readFileSync;
+let validations = 0;
+fs.readFileSync = function(path, ...args) {
+  if (path === ${JSON.stringify(join(crateDir, "Cargo.toml"))} && args[0] === 'utf8') validations++;
+  return read.call(this, path, ...args);
+};
+syncBuiltinESMExports();
+process.on('exit', () => fs.writeFileSync(${JSON.stringify(join(dir, "validations.json"))}, JSON.stringify(validations)));
+export default [{files:['**/*.ts'], plugins:{demo:nativePlugin({name:'demo',rules:['rename-value','suggest-rename'],crate:${JSON.stringify(crateDir)}})},languageOptions:{parserOptions:{projectService:true}},rules:{'demo/rename-value':['error',{match:'oldName',replacement:'newName'}],'demo/suggest-rename':['error',{match:'oldName',replacement:'newName'}]}}];`,
+    });
+    for (let invocation = 0; invocation < 2; invocation++) {
+      const result = run(dir, cache, ["-f", "json", "case.ts"]);
+      assert.equal(result.status, 1, result.stderr);
+      assert.equal(JSON.parse(result.stdout)[0].messages.length, 2);
+      assert.equal(JSON.parse(readFileSync(join(dir, "validations.json"))), 1);
+    }
+  },
+);
+
 test("native rules", { skip: skipNative }, async t => {
   await t.test(
     "empty autofixes and suggestion replacements remain present",
