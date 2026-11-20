@@ -37,6 +37,9 @@ inputs, and constructs the program in Rust. Explicit metadata takes precedence
 over project discovery, including when `project` and `projectService` are false.
 Files outside every entry fail the run. This option is specific to Lintrs;
 ESLint still requires real `parserOptions.programs` when using provided programs.
+The host gives each metadata object a stable identity so resolver cache keys
+stay compact. Its fields and JSON representation remain available to rules;
+the original configuration objects are not mutated.
 
 Every enabled rule runs on every file it covers. lintrs never runs oxlint's
 built-in rules and ignores `oxlint-disable` comments.
