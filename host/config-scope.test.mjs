@@ -242,3 +242,123 @@ test("segment pruning retains matching ancestors and wildcard edge cases", async
     );
   }
 });
+
+// Randomized differential check: for many generated configurations and
+// candidate sets, every candidate must resolve to the same rules (or the same
+// "unconfigured" answer) with and without pruning. The seed is fixed so a
+// failure reproduces.
+test("pruning never changes ESLint's answer for a candidate file", async () => {
+  const root = "/repo";
+  const filePool = [
+    "src/a.ts",
+    "src/b.test.ts",
+    "src/deep/x/y.ts",
+    "src/.hidden/z.ts",
+    "dist/out.js",
+    "dist/sub/out.d.ts",
+    "lib/gen/types.ts",
+    "packages/p/src/i.ts",
+    "packages/p/dist/i.js",
+    "café/naïve.ts",
+    "emoji/😀.ts",
+    "abc/d.js",
+    "axc/d.js",
+    ".cache/c.js",
+    "test/fixtures/f.ts",
+    "a.ts",
+    "build.ts",
+    "buildings/b.ts",
+  ];
+  const patternPool = [
+    "**/*.ts",
+    "*.ts",
+    "src/**",
+    "src/*.ts",
+    "src/**/*.test.ts",
+    "dist/",
+    "dist/**",
+    "**/dist/",
+    "**/gen/**",
+    "lib/gen",
+    "packages/*/dist/**",
+    "**/*.d.ts",
+    ".cache/",
+    "**/.hidden/**",
+    "a?c/*.js",
+    "emoji/?.ts",
+    "emoji/??.ts",
+    "café/*.ts",
+    "build",
+    "build/",
+    "**/fixtures",
+    "test/**/f.ts",
+    "!src/a.ts",
+    "**/*.{ts,js}",
+    "src/[ab].ts",
+    "./src/a.ts",
+    "nothing/**",
+    "*.nope",
+    "src/deep/**/y.ts",
+    "*",
+  ];
+  let seed = 7;
+  const random = n => (seed = (seed * 1103515245 + 12345) % 2147483648) % n;
+  const pick = (pool, count) =>
+    Array.from({ length: count }, () => pool[random(pool.length)]);
+  const plugin = {
+    rules: Object.fromEntries(
+      Array.from({ length: 6 }, (_, i) => [`r${i}`, { create: () => ({}) }]),
+    ),
+  };
+  let pruned = 0;
+  for (let round = 0; round < 300; round++) {
+    const entries = Array.from({ length: 1 + random(5) }, (_, i) => {
+      const kind = random(4);
+      const entry = { rules: { [`t/r${i}`]: "error" } };
+      if (kind !== 1)
+        entry.files = pick(
+          patternPool.filter(pattern => !pattern.startsWith("!")),
+          1 + random(3),
+        );
+      if (kind !== 0) entry.ignores = pick(patternPool, 1 + random(4));
+      if (kind === 3) delete entry.rules;
+      if (kind === 3) delete entry.files;
+      return entry;
+    });
+    const files = [...new Set(pick(filePool, random(13)))].map(
+      file => `${root}/${file}`,
+    );
+    const build = async () => {
+      const configs = new FlatConfigArray(
+        [{ plugins: { t: plugin } }, ...entries.map(e => structuredClone(e))],
+        { basePath: root },
+      );
+      await configs.normalize();
+      return configs;
+    };
+    const original = await build();
+    const scoped = (await scopeConfig({ configs: await build(), root }, files))
+      .configs;
+    const patterns = configs =>
+      [...configs].reduce(
+        (total, entry) =>
+          total + (entry.files?.length ?? 0) + (entry.ignores?.length ?? 0),
+        0,
+      );
+    if (patterns(scoped) < patterns(original)) pruned++;
+    const answer = (configs, file) => {
+      const config = configs.getConfig(file);
+      return config === undefined
+        ? null
+        : Object.keys(config.rules ?? {}).sort();
+    };
+    for (const file of files)
+      assert.deepEqual(
+        answer(scoped, file),
+        answer(original, file),
+        `${file} with ${JSON.stringify(entries)}`,
+      );
+  }
+  // The check is only meaningful if pruning actually happened.
+  assert.ok(pruned > 200, `only ${pruned} rounds pruned anything`);
+});
