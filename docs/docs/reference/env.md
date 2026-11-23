@@ -25,16 +25,17 @@
 
 ## Typed native session
 
-| Variable                      | Effect                                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| `LINTRS_TYPED_NATIVE`         | `1` enables the native typed session for the in-process binding.                            |
-| `LINTRS_LAZY_OBJECTS`         | `1` defers native object materialization. Needs `LINTRS_TYPED_NATIVE`.                      |
-| `LINTRS_LAZY_PREFETCH`        | `1` prefetches lazy object facts.                                                           |
-| `LINTRS_ADAPTIVE_FACTS`       | `1` fuses fact fetches by learned access plans. Needs lazy objects.                         |
-| `LINTRS_COMPACT_DECLARATIONS` | `1` uses compact declaration handles. Needs the eager typed binding; not with lazy objects. |
-| `LINTRS_FUSED_SYMBOLS`        | `1` fuses symbol queries. Same requirements as compact declarations.                        |
-| `LINTRS_TRUE_BULK`            | `1` enables the bulk native query path.                                                     |
-| `LINTRS_CONTEXTUAL_BATCH`     | `1` batches contextual type queries. Needs `LINTRS_TYPED_NATIVE` and `LINTRS_TRUE_BULK`.    |
+| Variable                       | Effect                                                                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `LINTRS_TYPED_NATIVE`          | `1` enables the native typed session for the in-process binding.                                                                  |
+| `LINTRS_LAZY_OBJECTS`          | `1` defers native object materialization. Needs `LINTRS_TYPED_NATIVE`.                                                            |
+| `LINTRS_LAZY_PREFETCH`         | `1` prefetches lazy object facts.                                                                                                 |
+| `LINTRS_ADAPTIVE_FACTS`        | `1` fuses fact fetches by learned access plans. Needs lazy objects.                                                               |
+| `LINTRS_COMPACT_DECLARATIONS`  | `1` uses compact declaration handles. Needs the eager typed binding; not with lazy objects.                                       |
+| `LINTRS_FUSED_SYMBOLS`         | `1` fuses symbol queries. Same requirements as compact declarations.                                                              |
+| `LINTRS_TRUE_BULK`             | `1` enables the bulk native query path.                                                                                           |
+| `LINTRS_CONTEXTUAL_BATCH`      | `1` batches contextual type queries. Needs `LINTRS_TYPED_NATIVE` and `LINTRS_TRUE_BULK`.                                          |
+| `LINTRS_ADAPTIVE_TYPE_QUERIES` | `1` delays eager type-query prefetch until more than 16 distinct requests for a node kind in a file. No effect with lazy objects. |
 
 ## Internal
 
