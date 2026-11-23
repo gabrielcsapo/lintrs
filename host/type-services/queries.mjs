@@ -79,8 +79,16 @@ export function createQueries(ctx) {
   };
   let batches = new Map();
   let nodesByKind = new Map();
-  // Sparse rules query only a few nodes of each kind. Delay prefetch until
-  // repeated queries justify fetching the remaining nodes in that file.
+  // Adaptive prefetch: for these queries, the first questions about a node
+  // kind in a file are answered one at a time; only once a file shows it is
+  // asked about that kind a lot does the rest of the kind get fetched in
+  // bulk. On recommendedTypeChecked, unbound-method asks for under one symbol
+  // per file, and prefetching every identifier for it doubled its time.
+  // getTypeAtLocation stays on full prefetch by default: stock typed rules ask
+  // about types densely, and adaptive prefetch measured slower at every
+  // threshold (2, 4, 16). LINTRS_ADAPTIVE_TYPE_QUERIES=1 opts in for sparse
+  // workloads, such as the JavaScript rules left after moving the expensive
+  // ones to Rust.
   const adaptiveQueries = new Set([
     "getSymbolAtLocation",
     ...(process.env.LINTRS_ADAPTIVE_TYPE_QUERIES === "1"
