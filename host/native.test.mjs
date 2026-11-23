@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -1178,9 +1179,9 @@ export default [{files: ['*.ts'], plugins: {demo}, languageOptions: {parserOptio
     const reports = JSON.parse(result.stdout);
     assert.equal(reports.length, cases.length);
     for (const [index, options] of cases.entries()) {
-      const report = reports.find(
-        file => file.filePath === join(dir, `case-${index}.ts`),
-      );
+      const expectedPath = realpathSync(join(dir, `case-${index}.ts`));
+      const report = reports.find(file => file.filePath === expectedPath);
+      assert.ok(report, `Missing report for ${expectedPath}`);
       assert.deepEqual(report.messages, [
         {
           ruleId: "demo/explicit-location",
