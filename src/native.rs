@@ -245,13 +245,16 @@ macro_rules! export_rules {
                 $crate::native::RuleEntry {
                     name: $name,
                     create: {
-                        #[allow(improper_ctypes_definitions)]
-                        unsafe extern "C" fn create(
-                            options: &$crate::native::Value,
-                        ) -> Result<Box<dyn $crate::native::Rule>, String> {
-                            ($create)(options)
+                        struct __LintrsFactory;
+                        impl __LintrsFactory {
+                            #[allow(improper_ctypes_definitions)]
+                            unsafe extern "C" fn call(
+                                options: &$crate::native::Value,
+                            ) -> Result<Box<dyn $crate::native::Rule>, String> {
+                                ($create)(options)
+                            }
                         }
-                        create
+                        __LintrsFactory::call
                     },
                 }
             ),+
@@ -270,6 +273,40 @@ macro_rules! export_rules {
 }
 
 pub use crate::export_rules;
+
+#[cfg(test)]
+mod export_rules_tests {
+    use super::{Rule, Value};
+
+    fn create(options: &Value) -> Result<Box<dyn Rule>, String> {
+        Err(format!("create:{options}"))
+    }
+
+    fn call(options: &Value) -> Result<Box<dyn Rule>, String> {
+        Err(format!("call:{options}"))
+    }
+
+    crate::export_rules! {
+        "bare-create" => create,
+        "bare-call" => call,
+        "qualified" => self::create,
+        "closure" => |options| create(options),
+    }
+
+    #[test]
+    fn factory_names_do_not_resolve_to_the_abi_trampoline() {
+        let bundle = lintrs_rules_v0();
+        for (entry, expected) in
+            bundle
+                .rules
+                .iter()
+                .zip(["create:42", "call:42", "create:42", "create:42"])
+        {
+            let result = unsafe { (entry.create)(&Value::from(42)) };
+            assert_eq!(result.err().as_deref(), Some(expected));
+        }
+    }
+}
 
 #[cfg(feature = "in-process-node")]
 unsafe extern "C" {
