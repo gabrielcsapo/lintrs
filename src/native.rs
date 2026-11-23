@@ -274,40 +274,6 @@ macro_rules! export_rules {
 
 pub use crate::export_rules;
 
-#[cfg(test)]
-mod export_rules_tests {
-    use super::{Rule, Value};
-
-    fn create(options: &Value) -> Result<Box<dyn Rule>, String> {
-        Err(format!("create:{options}"))
-    }
-
-    fn call(options: &Value) -> Result<Box<dyn Rule>, String> {
-        Err(format!("call:{options}"))
-    }
-
-    crate::export_rules! {
-        "bare-create" => create,
-        "bare-call" => call,
-        "qualified" => self::create,
-        "closure" => |options| create(options),
-    }
-
-    #[test]
-    fn factory_names_do_not_resolve_to_the_abi_trampoline() {
-        let bundle = lintrs_rules_v0();
-        for (entry, expected) in
-            bundle
-                .rules
-                .iter()
-                .zip(["create:42", "call:42", "create:42", "create:42"])
-        {
-            let result = unsafe { (entry.create)(&Value::from(42)) };
-            assert_eq!(result.err().as_deref(), Some(expected));
-        }
-    }
-}
-
 #[cfg(feature = "in-process-node")]
 unsafe extern "C" {
     fn dlopen(path: *const c_char, mode: i32) -> *mut c_void;
@@ -643,4 +609,38 @@ pub fn plugin_probe(library: &str) -> Option<usize> {
     }
     let probe_fn: extern "C" fn() -> usize = unsafe { std::mem::transmute(probe) };
     Some(probe_fn())
+}
+
+#[cfg(test)]
+mod export_rules_tests {
+    use super::{Rule, Value};
+
+    fn create(options: &Value) -> Result<Box<dyn Rule>, String> {
+        Err(format!("create:{options}"))
+    }
+
+    fn call(options: &Value) -> Result<Box<dyn Rule>, String> {
+        Err(format!("call:{options}"))
+    }
+
+    crate::export_rules! {
+        "bare-create" => create,
+        "bare-call" => call,
+        "qualified" => self::create,
+        "closure" => |options| create(options).map_err(|message| format!("closure:{message}")),
+    }
+
+    #[test]
+    fn factory_names_do_not_resolve_to_the_abi_trampoline() {
+        let bundle = lintrs_rules_v0();
+        for (entry, expected) in
+            bundle
+                .rules
+                .iter()
+                .zip(["create:42", "call:42", "create:42", "closure:create:42"])
+        {
+            let result = unsafe { (entry.create)(&Value::from(42)) };
+            assert_eq!(result.err().as_deref(), Some(expected));
+        }
+    }
 }
