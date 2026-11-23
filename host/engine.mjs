@@ -11,6 +11,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { nativeDiagnosticLocation } from "./native/diagnostic.mjs";
+import { nativeFixText } from "./native/fix-text.mjs";
 import { loadConfig } from "./config.mjs";
 import { createNativeLibraryResolver } from "./native/resolve.mjs";
 import { createGraphQLHost } from "./graphql.mjs";
@@ -483,27 +485,22 @@ async function lint(
       : runNative();
     return (diagnostics ?? []).map(diagnostic => {
       const spec = specs.find(item => item.id === diagnostic.ruleId);
-      const start = position(diagnostic.pos);
-      const end = position(diagnostic.end);
+      const location = nativeDiagnosticLocation(diagnostic, position);
       return {
         ruleId: diagnostic.ruleId,
         severity: spec?.severity ?? 2,
         message: diagnostic.message,
-        line: start.line,
-        column: start.column,
+        ...location,
         nodeType: diagnostic.nodeType ?? null,
         ...(diagnostic.messageId === undefined
           ? {}
           : { messageId: diagnostic.messageId }),
-        ...(diagnostic.end === diagnostic.pos
-          ? {}
-          : { endLine: end.line, endColumn: end.column }),
         ...(diagnostic.fix === undefined || diagnostic.fix === null
           ? {}
           : {
               fix: {
                 range: [diagnostic.fix.pos, diagnostic.fix.end],
-                text: diagnostic.fix.text,
+                text: nativeFixText(diagnostic.fix),
               },
             }),
         ...((diagnostic.suggestions ?? []).length === 0
@@ -519,7 +516,7 @@ async function lint(
                   : { data: suggestion.data }),
                 fix: {
                   range: [suggestion.fix.pos, suggestion.fix.end],
-                  text: suggestion.fix.text,
+                  text: nativeFixText(suggestion.fix),
                 },
               })),
             }),

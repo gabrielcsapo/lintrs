@@ -23,7 +23,9 @@ use std::time::Instant;
 // instance the plugin may also depend on. Re-exporting them lets the macro
 // and plugin code go through `$crate::native::...` unconditionally.
 pub use serde_json::{self, Value};
-pub use tsrs_api::native_rules::symbol_has_jsdoc_tag;
+pub use tsrs_api::native_rules::{
+    LintrsNativeLocation as Location, LintrsNativePosition as Position, symbol_has_jsdoc_tag,
+};
 use tsrs_ast::{Kind, Node, SourceFile};
 use tsrs_checker::Checker;
 use tsrs_compiler::Program;
@@ -45,7 +47,7 @@ pub mod ts {
 pub const ABI_FINGERPRINT: &str = concat!(
     "lintrs/",
     env!("CARGO_PKG_VERSION"),
-    "/native-3/tsrs-c21a36ef/rustc-",
+    "/native-4/tsrs-c21a36ef/rustc-",
     env!("LINTRS_RUSTC_VERSION"),
     "/",
     env!("LINTRS_BUILD_ID")
@@ -78,6 +80,15 @@ pub struct Fix {
 }
 
 #[derive(Clone)]
+pub struct Utf16Fix {
+    /// UTF-8 byte offsets into the source text, as with `Fix`.
+    pub pos: u32,
+    pub end: u32,
+    /// JavaScript string code units, including unpaired surrogates.
+    pub text: Vec<u16>,
+}
+
+#[derive(Clone)]
 pub struct Suggestion {
     pub desc: String,
     pub fix: Fix,
@@ -91,9 +102,11 @@ pub struct Diagnostic {
     pub pos: u32,
     pub end: u32,
     pub fix: Option<Fix>,
+    pub fix_utf16: Option<Utf16Fix>,
     pub suggestions: Vec<Suggestion>,
     pub message_id: Option<String>,
     pub node_type: Option<String>,
+    pub location: Option<Location>,
 }
 
 /// Either a node (reported over its full range) or an explicit range.
@@ -146,7 +159,24 @@ impl RuleContext<'_> {
             suggestions: Vec::new(),
             message_id: None,
             node_type: None,
+            location: None,
+            fix_utf16: None,
         });
+    }
+
+    /// Reports an explicit ESLint location independently of source offsets.
+    /// Lines are one-based (zero is allowed); columns are zero-based UTF-16.
+    /// Column -1 produces ESLint column zero for directive diagnostics.
+    /// Omit the end to retain a start-only diagnostic. Fix offsets remain UTF-8.
+    pub fn report_at_location(
+        &mut self,
+        location: Location,
+        message: impl Into<String>,
+    ) -> &mut Diagnostic {
+        self.report((0, 0), message);
+        let diagnostic = self.diagnostics.last_mut().unwrap();
+        diagnostic.location = Some(location);
+        diagnostic
     }
 
     pub fn report_with_id(
@@ -179,6 +209,8 @@ impl RuleContext<'_> {
             suggestions: Vec::new(),
             message_id: None,
             node_type: None,
+            location: None,
+            fix_utf16: None,
         });
     }
 
@@ -198,6 +230,8 @@ impl RuleContext<'_> {
             suggestions,
             message_id: None,
             node_type: None,
+            location: None,
+            fix_utf16: None,
         });
     }
 
@@ -554,14 +588,26 @@ unsafe fn run(
                 message: diagnostic.message,
                 message_id: diagnostic.message_id,
                 node_type: diagnostic.node_type,
+                location: diagnostic.location,
                 pos: utf16(diagnostic.pos),
                 end: utf16(diagnostic.end),
                 fix: diagnostic
-                    .fix
+                    .fix_utf16
                     .map(|fix| tsrs_api::native_rules::LintrsNativeFix {
                         pos: utf16(fix.pos),
                         end: utf16(fix.end),
-                        text: fix.text,
+                        text: String::new(),
+                        text_utf16: Some(fix.text),
+                    })
+                    .or_else(|| {
+                        diagnostic
+                            .fix
+                            .map(|fix| tsrs_api::native_rules::LintrsNativeFix {
+                                pos: utf16(fix.pos),
+                                end: utf16(fix.end),
+                                text: fix.text,
+                                text_utf16: None,
+                            })
                     }),
                 suggestions: diagnostic
                     .suggestions
@@ -577,6 +623,7 @@ unsafe fn run(
                                 pos: utf16(suggestion.fix.pos),
                                 end: utf16(suggestion.fix.end),
                                 text: suggestion.fix.text,
+                                text_utf16: None,
                             },
                         },
                     )

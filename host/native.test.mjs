@@ -1144,3 +1144,96 @@ serde_json = "1"
     }
   });
 });
+
+test(
+  "native explicit locations preserve configuration errors and independent fix ranges",
+  { skip: skipNative },
+  t => {
+    const source = '// 😀\r\nexport const value = "a";\r\n';
+    const cases = [
+      {},
+      { withEnd: true },
+      { line: 2, column: 7, withEnd: true },
+      { withEnd: true, fix: true },
+      { line: 1, column: -1, withEnd: true },
+    ];
+    const files = Object.fromEntries(
+      cases.map((options, index) => [`case-${index}.ts`, source]),
+    );
+    const { dir, cache } = project(t, {
+      files,
+      config:
+        () => `import {nativePlugin} from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+const demo = nativePlugin({name: 'demo', rules: ['explicit-location'], crate: ${JSON.stringify(fixtureCrate)}});
+export default [{files: ['*.ts'], plugins: {demo}, languageOptions: {parserOptions: {projectService: true}}},
+...${JSON.stringify(cases)}.map((options, index) => ({files: ['case-' + index + '.ts'], rules: {'demo/explicit-location': ['error', options]}}))];`,
+    });
+    const result = run(dir, cache, [
+      "--require-native",
+      "-f",
+      "json",
+      ...Object.keys(files),
+    ]);
+    assert.equal(result.status, 1, result.stderr);
+    const reports = JSON.parse(result.stdout);
+    assert.equal(reports.length, cases.length);
+    for (const [index, options] of cases.entries()) {
+      const report = reports.find(
+        file => file.filePath === join(dir, `case-${index}.ts`),
+      );
+      assert.deepEqual(report.messages, [
+        {
+          ruleId: "demo/explicit-location",
+          severity: 2,
+          message: "explicit location",
+          line: options.line ?? 0,
+          column: (options.column ?? 0) + 1,
+          nodeType: null,
+          messageId: "explicitLocation",
+          ...(options.withEnd
+            ? {
+                endLine: options.line ?? 0,
+                endColumn: (options.column ?? 0) + 1,
+              }
+            : {}),
+          ...(options.fix
+            ? {
+                fix: {
+                  range: [source.indexOf("value"), source.indexOf("value") + 5],
+                  text: "renamed",
+                },
+              }
+            : {}),
+        },
+      ]);
+    }
+  },
+);
+
+test(
+  "native UTF-16 fixes survive result finalization without losing lone surrogates",
+  { skip: skipNative },
+  t => {
+    const { dir, cache } = project(t, {
+      files: { "case.ts": "export {};" },
+      config:
+        () => `import {nativePlugin} from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+const demo=nativePlugin({name:"demo",rules:["utf16-replacement"],crate:${JSON.stringify(fixtureCrate)}});
+export default [{files:["*.ts"],plugins:{demo},languageOptions:{parserOptions:{projectService:true}},rules:{"demo/utf16-replacement":"error"}}];`,
+    });
+    const result = run(dir, cache, [
+      "--require-native",
+      "-f",
+      "json",
+      "case.ts",
+    ]);
+    assert.equal(result.status, 1, result.stderr);
+    const reports = JSON.parse(result.stdout);
+    assert.equal(reports.length, 1);
+    assert.deepEqual(reports[0].messages[0].fix, {
+      range: [0, 0],
+      text: "'\ud800'",
+    });
+    assert.equal(reports[0].messages[0].fix.text.charCodeAt(1), 0xd800);
+  },
+);
