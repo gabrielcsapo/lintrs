@@ -2,11 +2,22 @@ import { existsSync, globSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 const metadataKeys = new WeakMap();
+// Explicit projects can list thousands of roots; scanning `fileNames` for
+// every linted file is quadratic, so each project's roots become a set once.
+const rootSets = new WeakMap();
+function hasRoot(project, file) {
+  let roots = rootSets.get(project);
+  if (roots === undefined) {
+    roots = new Set(project.fileNames);
+    rootSets.set(project, roots);
+  }
+  return roots.has(file);
+}
 
 export function projectForFile(file, options, root, nativeProjects) {
   if (options.lintrsProjects !== undefined) {
     for (const project of options.lintrsProjects) {
-      if (!project.fileNames.includes(file)) continue;
+      if (!hasRoot(project, file)) continue;
       if (nativeProjects === undefined) return project;
       if (!metadataKeys.has(project))
         metadataKeys.set(project, JSON.stringify(projectConfig(project)));
