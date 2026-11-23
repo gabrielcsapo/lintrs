@@ -190,7 +190,77 @@ impl Rule for SuggestRename {
     }
 }
 
+#[derive(Default)]
+struct ExplicitLocation;
+
+impl Rule for ExplicitLocation {
+    fn initialize(&self, context: &mut RuleContext<'_>) {
+        use lintrs::native::{Location, Position};
+        let with_end = context
+            .options
+            .get("withEnd")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let line = context
+            .options
+            .get("line")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32;
+        let column = context
+            .options
+            .get("column")
+            .and_then(Value::as_i64)
+            .unwrap_or(0) as i32;
+        let fix = context
+            .options
+            .get("fix")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            .then(|| {
+                let pos = context.source_file.text().find("value").unwrap() as u32;
+                Fix {
+                    pos,
+                    end: pos + 5,
+                    text: "renamed".into(),
+                }
+            });
+        let diagnostic = context.report_at_location(
+            Location {
+                start: Position { line, column },
+                end: with_end.then_some(Position { line, column }),
+            },
+            "explicit location",
+        );
+        diagnostic.message_id = Some("explicitLocation".into());
+        diagnostic.fix = fix;
+    }
+    fn listens_to(&self, _kind: Kind) -> bool {
+        false
+    }
+    fn visit(&self, _node: P<lintrs::ts::ast::Node>, _context: &mut RuleContext<'_>) {}
+}
+
+#[derive(Default)]
+pub struct Utf16Replacement;
+impl Rule for Utf16Replacement {
+    fn initialize(&self, context: &mut RuleContext<'_>) {
+        let diagnostic =
+            context.report_with_id((0, 0), "UTF-16 replacement", "utf16Replacement", "Program");
+        diagnostic.fix_utf16 = Some(lintrs::native::Utf16Fix {
+            pos: 0,
+            end: 0,
+            text: vec![0x27, 0xd800, 0x27],
+        });
+    }
+    fn listens_to(&self, _kind: Kind) -> bool {
+        false
+    }
+    fn visit(&self, _node: P<lintrs::ts::ast::Node>, _context: &mut RuleContext<'_>) {}
+}
+
 lintrs::export_rules! {
+    "utf16-replacement" => lintrs::native::simple::<Utf16Replacement>,
+    "explicit-location" => lintrs::native::simple::<ExplicitLocation>,
     "exit-ordering" => lintrs::native::simple::<ExitOrdering>,
     "file-counter" => lintrs::native::simple::<FileCounter>,
     "value-is-string" => lintrs::native::simple::<ValueIsString>,

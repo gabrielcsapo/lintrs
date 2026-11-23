@@ -284,6 +284,7 @@ impl Directives {
                     fix: Fix {
                         range: [index.utf16_offset(start), index.utf16_offset(end)],
                         text: String::new(),
+                        text_utf16: None,
                     },
                     directive: directive.directive,
                 })
@@ -338,6 +339,7 @@ impl Directives {
                             index.utf16_offset(parent.range.1),
                         ],
                         text: " ".to_owned(),
+                        text_utf16: None,
                     },
                     directive: group[0].directive,
                 }]

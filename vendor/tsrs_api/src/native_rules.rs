@@ -50,6 +50,7 @@ pub struct LintrsNativeFix {
     pub pos: u32,
     pub end: u32,
     pub text: String,
+    pub text_utf16: Option<Vec<u16>>,
 }
 
 pub struct LintrsNativeSuggestion {
@@ -59,11 +60,27 @@ pub struct LintrsNativeSuggestion {
     pub data: Option<Value>,
 }
 
+/// ESLint source locations use one-based lines and zero-based UTF-16 columns.
+/// Line zero is preserved for diagnostics about project configuration.
+/// Column -1 preserves column-zero directive diagnostics in ESLint output.
+#[derive(Clone, Copy)]
+pub struct LintrsNativePosition {
+    pub line: u32,
+    pub column: i32,
+}
+
+#[derive(Clone, Copy)]
+pub struct LintrsNativeLocation {
+    pub start: LintrsNativePosition,
+    pub end: Option<LintrsNativePosition>,
+}
+
 pub struct LintrsNativeDiagnostic {
     pub rule_id: String,
     pub message: String,
     pub message_id: Option<String>,
     pub node_type: Option<String>,
+    pub location: Option<LintrsNativeLocation>,
     pub pos: u32,
     pub end: u32,
     pub fix: Option<LintrsNativeFix>,

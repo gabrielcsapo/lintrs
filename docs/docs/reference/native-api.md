@@ -24,6 +24,8 @@ pub struct RuleContext<'a> {
 impl RuleContext<'_> {
     pub fn cache<T: Default + Send + 'static>(&self) -> Arc<Mutex<T>>;
     pub fn report(&mut self, target: impl Into<ReportTarget>, message: impl Into<String>);
+    pub fn report_at_location(&mut self, location: Location,
+                              message: impl Into<String>) -> &mut Diagnostic;
     pub fn report_with_id(&mut self, target: impl Into<ReportTarget>,
                           message: impl Into<String>, message_id: impl Into<String>,
                           node_type: impl Into<String>) -> &mut Diagnostic;
@@ -39,7 +41,11 @@ pub enum ReportTarget {
     Range { pos: u32, end: u32 },
 }
 
+pub struct Position { pub line: u32, pub column: i32 }
+pub struct Location { pub start: Position, pub end: Option<Position> }
+
 pub struct Fix        { pub pos: u32, pub end: u32, pub text: String }
+pub struct Utf16Fix   { pub pos: u32, pub end: u32, pub text: Vec<u16> }
 pub struct Suggestion {
     pub desc: String,
     pub fix: Fix,
@@ -48,14 +54,28 @@ pub struct Suggestion {
 }
 ```
 
-Positions are tsrs **UTF-8 byte offsets**, converted to ESLint UTF-16
-locations.
+Node ranges and fix ranges use tsrs **UTF-8 byte offsets**, converted to ESLint
+UTF-16 offsets. Explicit `Position` columns use UTF-16 code units.
 
 `report_with_id` preserves ESLint message ids and ESTree node type names in
 JSON output. Its returned diagnostic can also carry a fix or suggestions.
 Suggestion message ids and data are optional and are preserved when supplied.
 An empty replacement string deletes the selected range, for both fixes and
-suggestions. These fields require rebuilding native plugins with ABI `native-3`.
+suggestions. Native plugins must be rebuilt with ABI `native-4`.
+
+Set the returned diagnostic's `fix_utf16` to a `Utf16Fix` when replacement text
+contains JavaScript code units that Rust strings cannot represent, such as an
+unpaired surrogate. Leave its ordinary `fix` unset. The host preserves these code
+units through result finalization and JSON output.
+
+`report_at_location` preserves explicit ESLint source locations, including line
+zero for configuration errors and zero-width ranges with an explicit end. Lines
+are one-based (zero is allowed), and columns are zero-based UTF-16 code units;
+the JSON formatter adds one to columns. A column of `-1` preserves ESLint’s
+column-zero diagnostics used to report disabled directives. Set `end: None` for a start-only report.
+The returned diagnostic supports the same message id, node type, fixes and
+suggestions as other reports. Fix and suggestion offsets remain UTF-8 bytes,
+independent of the diagnostic location.
 
 `symbol_has_jsdoc_tag(symbol: P<Symbol>, name: &str) -> bool` checks a symbol's
 JSDoc tags using the same symbol documentation lookup as the typed adapter.

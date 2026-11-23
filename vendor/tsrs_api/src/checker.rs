@@ -529,13 +529,29 @@ pub(crate) fn lintrs_run_native_rules(
                 if let Some(node_type) = diagnostic.node_type {
                     o.str_nonempty("nodeType", &node_type);
                 }
+                if let Some(location) = diagnostic.location {
+                    let position = |value: crate::native_rules::LintrsNativePosition| {
+                        let mut p = json::Obj::new();
+                        p.num("line", value.line as f64);
+                        p.num("column", value.column as f64);
+                        p.build()
+                    };
+                    let mut loc = json::Obj::new();
+                    loc.set("start", position(location.start));
+                    if let Some(end) = location.end {
+                        loc.set("end", position(end));
+                    }
+                    o.set("loc", loc.build());
+                }
                 o.num("pos", diagnostic.pos as f64);
                 o.num("end", diagnostic.end as f64);
                 if let Some(fix) = diagnostic.fix {
                     let mut f = json::Obj::new();
                     f.num("pos", fix.pos as f64);
                     f.num("end", fix.end as f64);
-                    f.set("text", Value::String(fix.text));
+                    if let Some(units) = fix.text_utf16 {
+                        f.set("textUtf16", Value::Array(units.into_iter().map(|unit| Value::Number(f64::from(unit))).collect()));
+                    } else { f.set("text", Value::String(fix.text)); }
                     o.set("fix", f.build());
                 }
                 if !diagnostic.suggestions.is_empty() {
@@ -557,7 +573,9 @@ pub(crate) fn lintrs_run_native_rules(
                                     let mut f = json::Obj::new();
                                     f.num("pos", suggestion.fix.pos as f64);
                                     f.num("end", suggestion.fix.end as f64);
-                                    f.set("text", Value::String(suggestion.fix.text));
+                                    if let Some(units) = suggestion.fix.text_utf16 {
+                                        f.set("textUtf16", Value::Array(units.into_iter().map(|unit| Value::Number(f64::from(unit))).collect()));
+                                    } else { f.set("text", Value::String(suggestion.fix.text)); }
                                     o.set("fix", f.build());
                                     o.build()
                                 })

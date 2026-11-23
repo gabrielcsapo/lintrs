@@ -11,6 +11,8 @@ pub const ERROR: u8 = 2;
 pub struct Fix {
     pub range: [usize; 2],
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "textUtf16")]
+    pub text_utf16: Option<Vec<u16>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
