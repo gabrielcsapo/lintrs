@@ -126,9 +126,10 @@ export function nodeMaps(sourceCode, rawFile, adapter, sdk) {
     }
     for (const start of starts) {
       const key = `${start}:${node.end}`;
-      const matches = byRange.get(key) ?? [];
-      matches.push(node);
-      byRange.set(key, matches);
+      const matches = byRange.get(key);
+      if (matches === undefined) byRange.set(key, node);
+      else if (Array.isArray(matches)) matches.push(node);
+      else byRange.set(key, [matches, node]);
     }
     node.forEachChild(visit);
   };
@@ -224,10 +225,14 @@ export function nodeMaps(sourceCode, rawFile, adapter, sdk) {
         node.range[0],
         sourceCode.getTokenBefore(node.typeAnnotation).range[1],
       ];
-    const matches = (byRange.get(`${range[0]}:${range[1]}`) ?? []).filter(
-      candidate =>
-        names.some(name => sdk.ast.SyntaxKind[name] === candidate.kind),
-    );
+    const candidates = byRange.get(`${range[0]}:${range[1]}`);
+    const matchingKind = candidate =>
+      names.some(name => sdk.ast.SyntaxKind[name] === candidate.kind);
+    const matches = Array.isArray(candidates)
+      ? candidates.filter(matchingKind)
+      : candidates !== undefined && matchingKind(candidates)
+        ? [candidates]
+        : [];
     if (matches.length === 0 && !required) return undefined;
     if (matches.length !== 1)
       throw new Error(
