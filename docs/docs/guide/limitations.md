@@ -45,7 +45,7 @@ narrows the gap without closing it.
 What changes the picture:
 
 - **Rules written in Rust** skip both costs: they query the checker directly.
-  The same custom typed rule is about 2.5× faster than under ESLint (see
+  The same custom typed rule is about 3× faster than under ESLint (see
   [Benchmarks](/benchmarks) and [Rust rules](./rust-rules)).
 - **Profiling** shows where a given config spends its time:
   `TIMING=1 lintrs …` splits each rule into its own code, adapter, checker
