@@ -48,6 +48,50 @@ test("native helpers can be imported by a program read from stdin", () => {
 });
 
 test(
+  "native settings remain isolated between ordinary files and inline overrides",
+  { skip: skipNative },
+  t => {
+    const { dir, cache } = project(t, {
+      files: {
+        "first.ts": "export const oldName = 1;\n",
+        "inline.ts":
+          '/* eslint "demo/rename-value": ["warn", {"match":"oldName","replacement":"inlineName"}] */\nexport const oldName = 1;\n',
+        "disabled.ts":
+          '/* eslint "demo/rename-value": "off" */\nexport const oldName = 1;\n',
+        "last.ts": "export const oldName = 1;\n",
+      },
+      config: ({ crateDir }) => `
+import {nativePlugin} from ${JSON.stringify(`file://${join(root, "host/native/index.mjs")}`)};
+export default [{files:['**/*.ts'],plugins:{demo:nativePlugin({name:'demo',rules:['rename-value'],crate:${JSON.stringify(crateDir)}})},languageOptions:{parserOptions:{projectService:true}},rules:{'demo/rename-value':['error',{match:'oldName',replacement:'newName'}]}}];`,
+    });
+    const paths = ["first.ts", "inline.ts", "disabled.ts", "last.ts"];
+    const result = run(dir, cache, ["-f", "json", ...paths]);
+    assert.equal(result.status, 1, result.stderr);
+    const files = new Map(
+      JSON.parse(result.stdout).map(file => [file.filePath, file.messages]),
+    );
+    for (const name of ["first.ts", "last.ts"]) {
+      const messages = files.get(join(dir, name));
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0].severity, 2);
+      assert.equal(messages[0].fix.text, "newName");
+    }
+    const inline = files.get(join(dir, "inline.ts"));
+    assert.equal(inline.length, 1);
+    assert.equal(inline[0].severity, 1);
+    assert.equal(inline[0].fix.text, "inlineName");
+    assert.deepEqual(files.get(join(dir, "disabled.ts")), []);
+
+    const quiet = run(dir, cache, ["-f", "json", "--quiet", ...paths]);
+    assert.equal(quiet.status, 1, quiet.stderr);
+    assert.deepEqual(
+      JSON.parse(quiet.stdout).map(file => file.filePath),
+      [join(dir, "first.ts"), join(dir, "last.ts")],
+    );
+  },
+);
+
+test(
   "mixed native callback failures retain their cause and stop later files",
   { skip: skipNative },
   t => {

@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 import { nativeDiagnosticLocation } from "./native/diagnostic.mjs";
 import { nativeFixText } from "./native/fix-text.mjs";
 import { loadConfig } from "./config.mjs";
-import { createNativeLibraryResolver } from "./native/resolve.mjs";
+import { createNativeRulePreparer } from "./native/config.mjs";
 import { createGraphQLHost } from "./graphql.mjs";
 import {
   applyInlineGlobals,
@@ -311,8 +311,6 @@ async function lint(
   const registeredIds = new Map();
   const wrappedRules = {};
   const nativeRules = new Map();
-  const nativeLibraries = new Map();
-  const resolveLibrary = createNativeLibraryResolver();
   for (const [index, [id, rule]] of [...rules].entries()) {
     if (rule.meta?.lintrs?.native === true) {
       nativeRules.set(id, rule);
@@ -425,42 +423,7 @@ async function lint(
       ),
     }),
   );
-  const preparedNativeOptions = new Map();
-  const nativeSpecsFor = config => {
-    const specs = [];
-    const libraries = new Set();
-    for (const [ruleId, setting] of Object.entries(config.rules ?? {})) {
-      const rule = nativeRules.get(ruleId);
-      if (rule === undefined) continue;
-      const severity = setting[0] ?? 0;
-      if (severity === 0 || (quiet && severity === 1)) continue;
-      if (!nativeLibraries.has(rule.meta.lintrs))
-        nativeLibraries.set(rule.meta.lintrs, resolveLibrary(rule.meta.lintrs));
-      libraries.add(nativeLibraries.get(rule.meta.lintrs));
-      const options = setting.slice(1);
-      const normalized = options.length === 1 ? options[0] : options;
-      let prepared = normalized;
-      if (rule.meta.lintrs.prepareOptions !== undefined) {
-        let variants = preparedNativeOptions.get(rule);
-        if (variants === undefined) {
-          variants = new Map();
-          preparedNativeOptions.set(rule, variants);
-        }
-        const key = JSON.stringify(normalized);
-        if (!variants.has(key))
-          variants.set(key, rule.meta.lintrs.prepareOptions(normalized));
-        prepared = variants.get(key);
-      }
-      specs.push({
-        name: rule.meta.lintrs.rule,
-        library: nativeLibraries.get(rule.meta.lintrs),
-        id: ruleId,
-        severity,
-        options: prepared,
-      });
-    }
-    return { specs, libraries: [...libraries] };
-  };
+  const nativeSpecsFor = createNativeRulePreparer(nativeRules, { quiet });
   const nativeMessagesFor = (filePath, config, position, jsSkipped) => {
     const { specs, libraries } = nativeSpecsFor(config);
     if (specs.length === 0) return [];
