@@ -201,13 +201,20 @@ function normalizeVisitorFields(sourceCode) {
 
 export function discoverFiles(paths, configs) {
   const files = new Set();
-  const visit = path => {
-    const stat = lstatSync(path);
+  const visit = (path, stat = lstatSync(path)) => {
     if (stat.isSymbolicLink())
       throw new Error(`Symlink discovery is not implemented: ${path}`);
     if (stat.isDirectory()) {
       if (configs.isDirectoryIgnored(path)) return;
-      for (const entry of readdirSync(path)) visit(join(path, entry));
+      for (const entry of readdirSync(path, { withFileTypes: true })) {
+        const child = join(path, entry.name);
+        visit(
+          child,
+          entry.isFile() || entry.isDirectory() || entry.isSymbolicLink()
+            ? entry
+            : lstatSync(child),
+        );
+      }
     } else if (/\.(?:[cm]?[jt]sx?|graphql)$/u.test(path)) {
       files.add(path);
     }
